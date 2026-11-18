@@ -6,6 +6,9 @@ import androidx.room.Room
 import com.byd.proximitylab.ble.AndroidBleScanSource
 import com.byd.proximitylab.ble.BleScanSource
 import com.byd.proximitylab.data.ProximityLabDatabase
+import com.byd.proximitylab.session.SessionRecorder
+import com.byd.proximitylab.session.SessionStore
+import com.byd.proximitylab.session.data.RoomSessionStore
 import com.byd.proximitylab.target.NoVerifiedIdentityEvidence
 import com.byd.proximitylab.target.TargetAssociationPolicy
 import com.byd.proximitylab.target.TargetBindingStore
@@ -14,6 +17,8 @@ import com.byd.proximitylab.target.data.RoomTargetBindingStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class ProximityLabApplication : Application() {
 
@@ -21,23 +26,29 @@ class ProximityLabApplication : Application() {
 }
 
 /**
- * 普通构造器接线。04/05/11 复用同一 [TargetMonitor] 和扫描来源，不引入 DI 框架。
+ * 普通构造器接线。04/05/11 复用同一 [TargetMonitor]、扫描来源和 Session 控制器，不引入 DI 框架。
  *
- * 04 的 Session 存储应扩展 [ProximityLabDatabase] 并做迁移，不新建第二个 Room 数据库。
+ * Session 表扩展 [ProximityLabDatabase] 并通过迁移保留 02 的绑定和已采数据，不新建第二个 Room 数据库。
  */
-class AppContainer(context: Context) {
+class AppContainer(
+    context: Context,
+    databaseName: String = ProximityLabDatabase.NAME,
+    scanSource: BleScanSource = AndroidBleScanSource(context.applicationContext),
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val database: ProximityLabDatabase = Room.databaseBuilder(
         context.applicationContext,
         ProximityLabDatabase::class.java,
-        ProximityLabDatabase.NAME,
-    ).build()
+        databaseName,
+    )
+        .addMigrations(ProximityLabDatabase.MIGRATION_1_2)
+        .build()
 
     val bindingStore: TargetBindingStore = RoomTargetBindingStore(database.targetBindingDao())
 
-    val scanSource: BleScanSource = AndroidBleScanSource(context.applicationContext)
+    val scanSource: BleScanSource = scanSource
 
     /**
      * 生产环境暂不提供可复验身份证据：真实车辆地址轮换的唯一依据留给票据 14。
@@ -49,4 +60,30 @@ class AppContainer(context: Context) {
         scope = scope,
         policy = TargetAssociationPolicy(NoVerifiedIdentityEvidence),
     )
+
+    val sessionStore: SessionStore = RoomSessionStore(database.samplingSessionDao())
+
+    /**
+     * 04/05/08/11 共用的会话控制与追加入口。
+     */
+    val sessionRecorder: SessionRecorder = SessionRecorder(
+        store = sessionStore,
+        observationSource = targetMonitor,
+        scope = scope,
+    )
+
+    init {
+        // 进程启动时把上次异常终止遗留的采集中 Session 标为中断，只保留已写入的覆盖终点。
+        scope.launch {
+            sessionRecorder.recoverInterruptedSessions()
+        }
+    }
+
+    /**
+     * 释放数据库与协程作用域。生产进程不调用；测试用独立容器验证接线后释放资源。
+     */
+    fun close() {
+        scope.cancel()
+        database.close()
+    }
 }

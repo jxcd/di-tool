@@ -72,6 +72,11 @@ kotlin {
     }
 }
 
+ksp {
+    // 04 起导出 Room schema，供 08 等后续切片验证升级路径并保留已采数据。
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

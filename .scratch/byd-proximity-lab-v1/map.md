@@ -76,6 +76,7 @@ flowchart LR
 - 票据 03：纯 Kotlin 共享接近判定 `ProximityEngine` 从 `UNKNOWN` 起按有序会话时间线只在确认 `FAR` 后触发一次 `ENTERED_RANGE`，停扫、过期、身份失去确认与改绑撤销触发资格，决策与事件携带算法/触发规则版本；验证：`:app:assembleDebug :app:testDebugUnitTest --rerun-tasks` 全量 37 tests 0 failures、聚焦 `--tests 'com.byd.proximitylab.proximity.*'` 32 tests 0 failures、`:app:lintDebug` 通过、aapt2 badging 为 minSdk 31 / targetSdk 36 / `BLUETOOTH_SCAN` neverForLocation / 无 INTERNET；下游：`com.byd.proximitylab.proximity.ProximityEngine` 的 observe/advanceTo/setScanAvailable/setTargetIdentity/rebindTarget，`ProximityTestHarness` 与 P1–P9 夹具供 05、09、12 复用。
 
 - 票据 02 已完成：只读 BLE 扫描、单目标人工绑定与身份关联；身份冲突保留原绑定并输出 `UNCERTAIN`；绑定持久化统一到 `ProximityLabDatabase`；7 项复审阻塞关闭。验证：67 JVM tests、15 connected tests（1 skipped 真实广告者）、lint 0 errors；APK 仅 `BLUETOOTH_SCAN(neverForLocation)`。下游：`TargetObservationSource`、`TargetBindingStore`、`TargetAssociationPolicy`；04 复用同一 Room 数据库。
+- 票据 04：定点采样到 Room Session 的首个闭环完成，Session 生命周期、稳定时间线顺序与覆盖终点由共用 `SessionRecorder`/`SessionStore` 提供，数据库 v2 与导出的 schema 支持后续升级。验证：`:app:testDebugUnitTest` 83 tests 0 failures，`:app:connectedDebugAndroidTest` 28 tests 0 failures（1 skipped 真实广告者），`:app:assembleDebug :app:lintDebug` 通过且 APK 无 INTERNET。下游：`SessionRecorder`、`SessionStore`、`SessionModels`、`RoomSessionStore`/`SamplingSessionDao`、`ProximityLabDatabase` v2，供 05、08、09、11 复用。
 ## Fog
 
 - [01](issues/01-android-bootstrap.md) 先实际验证选定版本的构建、KSP、依赖解析与 Lint。供应商文档的支持范围及已核验的 Android AAR 要求见 [Android 技术基线](android-toolchain.md)。

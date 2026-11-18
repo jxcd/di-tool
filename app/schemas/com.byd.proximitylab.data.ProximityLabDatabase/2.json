@@ -1,0 +1,318 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "b5c17837826e4ba7690e18998a223f7b",
+    "entities": [
+      {
+        "tableName": "bound_target",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`slot` INTEGER NOT NULL, `targetId` TEXT NOT NULL, `displayName` TEXT, `address` TEXT NOT NULL, `boundAtEpochMillis` INTEGER NOT NULL, `verifiedIdentityToken` TEXT, `verifiedIdentityDescription` TEXT, `lastAction` TEXT NOT NULL, `lastActionAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`slot`))",
+        "fields": [
+          {
+            "fieldPath": "slot",
+            "columnName": "slot",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "boundAtEpochMillis",
+            "columnName": "boundAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verifiedIdentityToken",
+            "columnName": "verifiedIdentityToken",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "verifiedIdentityDescription",
+            "columnName": "verifiedIdentityDescription",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastAction",
+            "columnName": "lastAction",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastActionAtEpochMillis",
+            "columnName": "lastActionAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "slot"
+          ]
+        }
+      },
+      {
+        "tableName": "sampling_session",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `targetId` TEXT NOT NULL, `targetDisplayName` TEXT, `targetAddress` TEXT NOT NULL, `samplingType` TEXT NOT NULL, `name` TEXT NOT NULL, `location` TEXT NOT NULL, `estimatedDistanceMeters` REAL, `phonePlacement` TEXT NOT NULL, `status` TEXT NOT NULL, `startedAtEpochMillis` INTEGER NOT NULL, `endedAtEpochMillis` INTEGER, `lastRecordedAtEpochMillis` INTEGER NOT NULL, `interruptedDetectedAtEpochMillis` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetDisplayName",
+            "columnName": "targetDisplayName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "targetAddress",
+            "columnName": "targetAddress",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "samplingType",
+            "columnName": "samplingType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "location",
+            "columnName": "location",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estimatedDistanceMeters",
+            "columnName": "estimatedDistanceMeters",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "phonePlacement",
+            "columnName": "phonePlacement",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtEpochMillis",
+            "columnName": "startedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAtEpochMillis",
+            "columnName": "endedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastRecordedAtEpochMillis",
+            "columnName": "lastRecordedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "interruptedDetectedAtEpochMillis",
+            "columnName": "interruptedDetectedAtEpochMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "session_timeline",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sequence` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` TEXT NOT NULL, `kind` TEXT NOT NULL, `processedAtEpochMillis` INTEGER NOT NULL, `observedAtEpochMillis` INTEGER, `receivedAtEpochMillis` INTEGER, `observationId` TEXT, `targetId` TEXT, `rawRssiDbm` INTEGER, `scanFrameId` INTEGER, `deliverySequence` INTEGER, `address` TEXT, `payloadFingerprint` TEXT, `scanAvailable` INTEGER, `scanStateLabel` TEXT, `detail` TEXT, `identityConfirmed` INTEGER, `identityStatusLabel` TEXT, `identityBasisLabel` TEXT, `droppedEvents` INTEGER, FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "sequence",
+            "columnName": "sequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "processedAtEpochMillis",
+            "columnName": "processedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "observedAtEpochMillis",
+            "columnName": "observedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "receivedAtEpochMillis",
+            "columnName": "receivedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "observationId",
+            "columnName": "observationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "rawRssiDbm",
+            "columnName": "rawRssiDbm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "scanFrameId",
+            "columnName": "scanFrameId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "deliverySequence",
+            "columnName": "deliverySequence",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "payloadFingerprint",
+            "columnName": "payloadFingerprint",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "scanAvailable",
+            "columnName": "scanAvailable",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "scanStateLabel",
+            "columnName": "scanStateLabel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "detail",
+            "columnName": "detail",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "identityConfirmed",
+            "columnName": "identityConfirmed",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "identityStatusLabel",
+            "columnName": "identityStatusLabel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "identityBasisLabel",
+            "columnName": "identityBasisLabel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "droppedEvents",
+            "columnName": "droppedEvents",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "sequence"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_session_timeline_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_timeline_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_session_timeline_sessionId_processedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "processedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_timeline_sessionId_processedAtEpochMillis` ON `${TABLE_NAME}` (`sessionId`, `processedAtEpochMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sampling_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b5c17837826e4ba7690e18998a223f7b')"
+    ]
+  }
+}

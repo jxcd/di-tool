@@ -29,7 +29,12 @@ class TargetMonitor(
     private val clock: () -> Long = System::currentTimeMillis,
     private val candidateRetentionMillis: Long = DEFAULT_CANDIDATE_RETENTION_MILLIS,
     private val maxDiagnostics: Int = DEFAULT_MAX_DIAGNOSTICS,
+    eventBufferCapacity: Int = DEFAULT_EVENT_BUFFER_CAPACITY,
 ) : TargetObservationSource {
+
+    init {
+        require(eventBufferCapacity >= 0) { "事件缓冲容量不能为负数：$eventBufferCapacity" }
+    }
 
     private val mutex = Mutex()
 
@@ -39,7 +44,7 @@ class TargetMonitor(
     override val state: StateFlow<TargetMonitorState> = _state.asStateFlow()
 
     private val _events = MutableSharedFlow<TargetEvent>(
-        extraBufferCapacity = 256,
+        extraBufferCapacity = eventBufferCapacity,
     )
     override val events: SharedFlow<TargetEvent> = _events.asSharedFlow()
 
@@ -53,6 +58,14 @@ class TargetMonitor(
     private var lastTargetObservation: TargetObservation? = null
     private var targetObservedInCurrentScan: Boolean = false
     private var lastEvaluatedScanState: ScanAvailability? = null
+    private var droppedTargetEventCount: Int = 0
+
+    private fun publishEvent(event: TargetEvent) {
+        if (!_events.tryEmit(event)) {
+            // 消费者写入较慢时 SharedFlow 可能满；计数随状态暴露，录制器据此写入缺口标记。
+            droppedTargetEventCount += 1
+        }
+    }
 
     init {
         scope.launch {
@@ -128,7 +141,7 @@ class TargetMonitor(
             ),
         )
         addDiagnostic(AssociationDiagnosticKind.TARGET_BOUND, "人工绑定目标 ${newBinding.address}。", now)
-        _events.tryEmit(TargetEvent.ActionRecorded(TargetAction.BOUND, newBinding, now))
+        publishEvent(TargetEvent.ActionRecorded(TargetAction.BOUND, newBinding, now))
         publishState()
         TargetActionResult.Success(newBinding)
     }
@@ -165,7 +178,7 @@ class TargetMonitor(
             "用户重新确认 ${updated.address} 为原目标，目标标识保留。",
             now,
         )
-        _events.tryEmit(TargetEvent.ActionRecorded(TargetAction.RECONFIRMED, updated, now))
+        publishEvent(TargetEvent.ActionRecorded(TargetAction.RECONFIRMED, updated, now))
         publishState()
         TargetActionResult.Success(updated)
     }
@@ -203,7 +216,7 @@ class TargetMonitor(
             "用户改绑到 ${newBinding.address}，原目标标识不再代表当前目标。",
             now,
         )
-        _events.tryEmit(TargetEvent.ActionRecorded(TargetAction.REBOUND, newBinding, now))
+        publishEvent(TargetEvent.ActionRecorded(TargetAction.REBOUND, newBinding, now))
         publishState()
         TargetActionResult.Success(newBinding)
     }
@@ -260,7 +273,7 @@ class TargetMonitor(
             addDiagnostic(AssociationDiagnosticKind.SCAN_STATE, scanStateMessage(scanState), now)
         }
         publishState()
-        _events.tryEmit(TargetEvent.ScanStateChanged(scanState, now))
+        publishEvent(TargetEvent.ScanStateChanged(scanState, now))
     }
 
     private suspend fun handleAdvertisementLocked(advertisement: BleAdvertisement) {
@@ -293,7 +306,7 @@ class TargetMonitor(
                 "可复验身份证据唯一匹配 ${continued.address}，目标标识保持不变。",
                 now,
             )
-            _events.tryEmit(TargetEvent.ActionRecorded(TargetAction.ADDRESS_CONTINUED, continued, now))
+            publishEvent(TargetEvent.ActionRecorded(TargetAction.ADDRESS_CONTINUED, continued, now))
         }
 
         publishIdentity(decision.identity)
@@ -307,7 +320,7 @@ class TargetMonitor(
             targetObservedInCurrentScan = true
             targetObservationCount += 1
             lastTargetObservation = observation
-            _events.tryEmit(TargetEvent.ObservationReceived(observation, now))
+            publishEvent(TargetEvent.ObservationReceived(observation, now))
         }
 
         publishState()
@@ -373,7 +386,7 @@ class TargetMonitor(
             }
         }
         if (changed) {
-            _events.tryEmit(
+            publishEvent(
                 TargetEvent.IdentityChanged(
                     identity = report,
                     diagnostics = diagnostics,
@@ -414,6 +427,7 @@ class TargetMonitor(
             lastTargetObservation = lastTargetObservation,
             targetObservedInCurrentScan = targetObservedInCurrentScan,
             diagnostics = diagnostics,
+            droppedTargetEventCount = droppedTargetEventCount,
         )
     }
 
@@ -434,5 +448,6 @@ class TargetMonitor(
     companion object {
         const val DEFAULT_CANDIDATE_RETENTION_MILLIS: Long = 30_000L
         const val DEFAULT_MAX_DIAGNOSTICS: Int = 20
+        const val DEFAULT_EVENT_BUFFER_CAPACITY: Int = 256
     }
 }

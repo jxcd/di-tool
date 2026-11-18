@@ -46,6 +46,10 @@ data class TargetMonitorState(
     val lastTargetObservation: TargetObservation? = null,
     val targetObservedInCurrentScan: Boolean = false,
     val diagnostics: List<AssociationDiagnostic> = emptyList(),
+    /**
+     * 消费者处理较慢导致 SharedFlow 缓冲满而被丢弃的目标事件数。录制器据此写入缺口标记。
+     */
+    val droppedTargetEventCount: Int = 0,
 )
 
 /**
