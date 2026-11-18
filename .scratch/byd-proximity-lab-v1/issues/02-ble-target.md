@@ -1,7 +1,7 @@
 # 02 实现 BLE 发现、人工绑定和目标关联
 
 Type: task
-Status: ready-for-agent
+Status: blocked
 Blocked by: 01
 User stories: 1, 2, 3, 4, 5, 6, 7
 
@@ -43,4 +43,41 @@ User stories: 1, 2, 3, 4, 5, 6, 7
 - [ ] 从设备页驱动可控扫描来源，覆盖空字段、通用目标、品牌提示、权限拒绝或失效、蓝牙关闭、扫描错误和重新开始。检查扫描可用性与目标未见有不同输出。
 - [ ] 在真实关联逻辑验证表中保守分支。用本地持久化入口复验重新进入后能读取绑定。一次人工改绑产生新的目标标识，重新确认原目标保留标识。真实车地址轮换的唯一依据仍留给 14。
 
+## Answer
+
+### 阻塞
+
+复审未通过，本票未完成，不能标记 resolved。阻塞项：
+
+1. `app/src/main/java/com/byd/proximitylab/target/TargetMonitor.kt:98-129,167-202,204-213`（状态复制见 `:370-386`）：绑定变化（清绑后重新 bind、rebindTo、以及从 store 载入新绑定）没有清空 per-target 观测状态，`targetObservationCount` / `lastTargetObservation` / `targetObservedInCurrentScan` 仍属于上一个目标；改绑后 UI 与 05 读取的 `TargetMonitorState` 会把旧目标观测显示或提供给新目标。
+2. `app/src/main/java/com/byd/proximitylab/target/TargetMonitor.kt:220-235`；`app/src/main/java/com/byd/proximitylab/target/TargetBinding.kt:111-121`；`app/src/main/java/com/byd/proximitylab/ui/device/DeviceScreen.kt:517-521`：每次进入 Scanning（包括用户停止后重新开始、蓝牙或权限恢复后重试）都会把身份报告无条件替换为 `TargetIdentityReport.persisted(status=CONFIRMED)` 并清空 candidates 与待确认候选；已出现的 UNCERTAIN（身份冲突）在没有新观测或人工重新确认的情况下被清除，UI 重新显示“身份已确认”。
+3. `app/src/main/java/com/byd/proximitylab/ui/device/DeviceScreen.kt:587-601`；`app/src/androidTest/java/com/byd/proximitylab/ui/device/DeviceScreenTest.kt:106-107`：Service UUID 或 Manufacturer Data 为空时 UI 显示“无”，测试也断言“无”；票据要求设备字段为空时按未知显示，空列表或缺失 ScanRecord 不等于设备明确没有这些字段。
+4. `.scratch/byd-proximity-lab-v1/issues/02-ble-target.md:4,38,43-44`：票据仍为 `Status: claimed`，没有 `## Answer`，自动化验收复选框未勾选；票据要求 Answer 写明绑定与观测读取入口、关联策略和人工恢复路径。
+5. `app/src/androidTest/java/com/byd/proximitylab/ble/AndroidBleScanSourceTest.kt:56-89`；`app/src/main/java/com/byd/proximitylab/ble/AndroidBleScanSource.kt:207-224`：真实 `AndroidBleScanSource` 测试只断言 Scanning 与 Stopped，观测列表只 println 不参与断言；实际日志观测数为 0，`ScanResult`→`BleAdvertisement` 的名称读取、RSSI、地址、UUID、Manufacturer Data、时间字段与 fingerprint 未被真实广播验证；该测试还硬依赖 BLE adapter，缺少 Assume/skip。
+6. `app/src/test/java/com/byd/proximitylab/testing/TestFixtures.kt:73-97`；`app/src/androidTest/java/com/byd/proximitylab/testing/DeviceTestFixtures.kt:48-72`：test 与 androidTest 各有一份同名 `ControllableBleScanSource` / `testAdvertisement` / `testBinding`，默认值和行为（如 `observedAtEpochMillis` 固定值 vs `System.currentTimeMillis()`）已分叉，后续修改容易只改一边导致测试语义不一致。记录本票阻塞时，上述两个路径已不存在，夹具集中在 `app/src/sharedTest/java/com/byd/proximitylab/testing/TestFixtures.kt` 并由 `app/build.gradle.kts` 的 sourceSets 同时挂到 test 与 androidTest，需在解除阻塞前复验该项。
+7. `app/src/main/java/com/byd/proximitylab/target/data/TargetBindingDatabase.kt:75-86`：02 新增独立 `target-binding.db` / `TargetBindingDatabase`；04 计划建立“唯一 Room 存储”并让后续切片“沿用同一数据库”。02 的持久化要求本身成立，但 04 前需要明确复用或迁移，否则会出现两个 Room 数据库。
+
+### 已尝试的恢复
+
+- 已按票据完成初版实现（BLE 扫描、人工绑定、目标关联、设备页与测试），并提交复审。
+- 复审未通过后未进行针对性代码修复：本次仅按指示记录阻塞并保留未完成实现，除票据文档外未修改任何实现文件，未勾选自动化验收复选框，不声称任何未运行的验证已通过。
+- 未运行 Gradle 构建或测试；阻塞判定依据为复审给出的代码位置与测试证据。
+
+### 解除条件
+
+1. 绑定变化（清绑后重新 bind、`rebindTo`、从 store 载入新绑定）时清空 per-target 观测状态，使 `TargetMonitorState` 不再携带上一个目标的 `targetObservationCount` / `lastTargetObservation` / `targetObservedInCurrentScan`，并补充对应单元测试。
+2. 扫描重新开始或重试不再无条件把身份报告重置为 `persisted(CONFIRMED)`；保留已记录的 UNCERTAIN 与待确认候选，仅在出现新观测或用户人工重新确认后更新身份状态，并补充“停止后重新开始”“蓝牙/权限恢复后重试”用例。
+3. Service UUID 与 Manufacturer Data 缺失时按“未知”展示，测试断言改为未知语义，区分“空列表或缺失 ScanRecord”与“设备明确没有该字段”。
+4. `AndroidBleScanSourceTest` 对真实扫描解析结果做断言（名称、RSSI、地址、UUID、Manufacturer Data、时间字段与 fingerprint），无法提供 BLE adapter 时使用 Assume/skip 跳过而不是失败；必要时补充可控广播夹具。
+5. 确认 test/androidTest 夹具只保留一份共享实现（记录时工作树已迁移到 `app/src/sharedTest/`），并复验两侧默认值一致。
+6. 明确 `target-binding.db` 与 04“唯一 Room 存储”的复用或迁移方案，避免留下两个 Room 数据库。
+7. 重新执行票据“验收与交接”和“自动化验收”，勾选复选框，并在 Answer 写明绑定与观测读取入口、可用关联策略及人工恢复路径。
+
+### WIP 分支与提交
+
+- 分支：`wip/02-blocked`
+- 提交：`ea57830bc3bee2613dd64623e807790eaf637891`（`wip(02): 未完成`）
+- 内容：票据 02 当前的代码与测试改动，不含票据文档；实施分支 `codex/byd-proximity-lab-v1` 只保留本票据文档的阻塞记录提交。
+
 ## Comments
+- claimed at HEAD e734234601e9aac37b36ee7d67d18994827cd69d
