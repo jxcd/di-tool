@@ -40,8 +40,8 @@ User stories: 1, 2, 3, 4, 5, 6, 7
 
 ## 自动化验收
 
-- [ ] 从设备页驱动可控扫描来源，覆盖空字段、通用目标、品牌提示、权限拒绝或失效、蓝牙关闭、扫描错误和重新开始。检查扫描可用性与目标未见有不同输出。
-- [ ] 在真实关联逻辑验证表中保守分支。用本地持久化入口复验重新进入后能读取绑定。一次人工改绑产生新的目标标识，重新确认原目标保留标识。真实车地址轮换的唯一依据仍留给 14。
+- [x] 从设备页驱动可控扫描来源，覆盖空字段、通用目标、品牌提示、权限拒绝或失效、蓝牙关闭、扫描错误和重新开始。检查扫描可用性与目标未见有不同输出。
+- [x] 在真实关联逻辑验证表中保守分支。用本地持久化入口复验重新进入后能读取绑定。一次人工改绑产生新的目标标识，重新确认原目标保留标识。真实车地址轮换的唯一依据仍留给 14。
 
 ## Answer
 
@@ -79,5 +79,36 @@ User stories: 1, 2, 3, 4, 5, 6, 7
 - 提交：`ea57830bc3bee2613dd64623e807790eaf637891`（`wip(02): 未完成`）
 - 内容：票据 02 当前的代码与测试改动，不含票据文档；实施分支 `codex/byd-proximity-lab-v1` 只保留本票据文档的阻塞记录提交。
 
+### 阻塞（resume-2）
+
+本轮实施结果返回“未完成，不能标记 resolved”；阻塞在票据收尾，不在代码缺陷：
+
+- 本轮开始时票据仍为 `Status: claimed`，`## Answer` 仍是上一轮阻塞记录；实施者按约定未修改 `Status` 与 `## Answer`，只按实际验证勾选了“自动化验收”复选框。
+- 截至本次记录，`## Answer` 尚未按“验收与交接”要求写明绑定与观测读取入口、可用关联策略和人工恢复路径；补齐前本票不能标记 resolved。
+- 本次仅记录阻塞并保存未完成代码，未逐项复审全部实现，也不声称任何未运行的验证已通过。
+
+### 已尝试的恢复（resume-2）
+
+- 本轮实施者完成票据 02 的代码与测试改动，工作树改动保存到 WIP 分支 `wip/02-blocked-2`，提交 `0915b048db77817aee177a5682e3bcddc87fb820`（29 个文件，+4139/−24，不含票据文档）。
+- 本次核对过的代码位置：绑定变化（从 store 载入、bind、reconfirm、rebind、clear）会清空 per-target 观测状态，见 `app/src/main/java/com/byd/proximitylab/target/TargetMonitor.kt:61-74,116,149,187,215`；扫描重新开始时保留已记录的 UNCERTAIN 与待确认候选，见同文件 `:233-245`；Room 存储统一为 `app/src/main/java/com/byd/proximitylab/data/ProximityLabDatabase.kt`，绑定表、DAO 与存储适配位于 `app/src/main/java/com/byd/proximitylab/target/data/TargetBindingPersistence.kt`，原独立 `TargetBindingDatabase.kt` 已移除。
+- 构建产物中的验证结果（本次票据管理员未重跑 Gradle，结果读自 `app/build`）：
+  - 单元测试 `app/build/test-results/testDebugUnitTest/`：`TargetMonitorTest` 12 tests/0 failures、`TargetAssociationPolicyTest` 9/0、`BleAdvertisementMapperTest` 3/0，时间戳 2026-11-18T15:30Z。
+  - 仪器测试 `app/build/outputs/androidTest-results/connected/debug/TEST-Medium_Phone_API_37.0(AVD) - 17.xml`：5 个测试类共 13 tests、0 failures、0 errors、0 skipped，`test-result-exit-code.txt` 为 `0`，时间戳 2026-11-18T15:39:33。
+- 未运行/未覆盖：本轮未执行 Gradle 构建或测试；未在真实车辆或真实 BLE 设备上复测，实车唯一身份特征仍待 14。
+
+### 解除条件（resume-2）
+
+1. 在 `## Answer` 写明绑定与观测读取入口（`TargetObservationSource` 的 `state`/`events`/`startScan`/`stopScan` 与 `TargetBindingStore`）、可用关联策略（`TargetAssociationPolicy`：地址匹配、原绑定地址仍在候选、可复验身份 token 唯一匹配；默认 `NoVerifiedIdentityEvidence`，品牌、名称、厂商 ID、RSSI 与未实测载荷前缀不作为唯一证据）及人工恢复路径（设备页重新确认、改绑、解除绑定）。
+2. 复核“自动化验收”与“验收与交接”结果，并注明实车唯一特征待 14 时采用保守分支。
+3. 完成后将 `Status` 改为 `resolved`。
+
+### WIP 分支与提交（resume-2）
+
+- 分支：`wip/02-blocked-2`（基于 `544881080943321ae4ccb994532de0e824f51d3b`）
+- 提交：`0915b048db77817aee177a5682e3bcddc87fb820`（`wip(02): 未完成`）
+- 内容：票据 02 的代码与测试改动，不含票据文档；实施分支 `codex/byd-proximity-lab-v1` 只保留本票据文档提交。
+
 ## Comments
 - claimed at HEAD e734234601e9aac37b36ee7d67d18994827cd69d
+- resumed from wip/02-blocked at 544881080943321ae4ccb994532de0e824f51d3b
+- claimed at HEAD 544881080943321ae4ccb994532de0e824f51d3b
