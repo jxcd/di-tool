@@ -72,6 +72,7 @@ flowchart LR
 - 依赖关系让 BLE 采集与纯 Kotlin 判定可分别完成，再汇合到定点采样和前台模拟测试。04 建立唯一 Room 存储和会话生命周期，05、06、08、09 按各自切片增加实际使用的记录。08 等待 06 的 schema 增量和 07 的图表。07、08、10 复用同一图表契约。
 - 把软件验证、可控 BLE 验收与目标车验收分别记录。算法夹具能证明事件契约，锁车休眠和锁屏通知需现场证据。
 - `BLUETOOTH_SCAN` 使用 `neverForLocation`，实际目标广播过滤表现由 13/14 记录。
+- 票据 01 已完成：Android 工程基线固定并实际验证（Gradle 9.9.1、JDK 21、AGP 9.5.1、Kotlin/Compose Compiler 2.4.21、KSP 2.3.14；minSdk 31 / compileSdk 37 / targetSdk 36；四页导航与 Room KSP 探针）。验证：assembleDebug、testDebugUnitTest、lintDebug、connectedDebugAndroidTest（3/3）通过，APK 无 INTERNET。下游入口：MainActivity、ProximityLabApp、LabDestination 与各页 ViewModel。
 
 ## Fog
 
