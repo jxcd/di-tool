@@ -108,7 +108,37 @@ User stories: 1, 2, 3, 4, 5, 6, 7
 - 提交：`0915b048db77817aee177a5682e3bcddc87fb820`（`wip(02): 未完成`）
 - 内容：票据 02 的代码与测试改动，不含票据文档；实施分支 `codex/byd-proximity-lab-v1` 只保留本票据文档提交。
 
+### 阻塞（resume-3）
+
+复审后 gate 仍未通过，本票不能标记 resolved。运行 `.tooling/jdk-21/bin/java.exe … :app:connectedDebugAndroidTest` 的结果为 exit 1（构建阶段任务均为 UP-TO-DATE，失败发生在仪器测试执行阶段）。阻塞项：
+
+1. `.scratch/byd-proximity-lab-v1/issues/02-ble-target.md:4,46-109`：票据收尾未完成。`Status` 仍为 `claimed`，`## Answer` 仍是上一轮阻塞与 resume-2 记录，未追加本轮完成内容和当前 gate 结果，未形成最终交接。
+2. `app/src/androidTest/java/com/byd/proximitylab/ble/AndroidBleScanSourceTest.kt:124-208`：真实扫描测试在本次 gate 中观测数为 0，`observations.forEach`（`:207-219`）的断言循环未执行；`ScanResult.toAdvertisement` 的实际回调字段路径仍未被真实广播端到端验证。该用例已有 adapter/蓝牙开关的 Assume 跳过（`:163-165`），但“有适配器、无广播”时仍会以 0 观测通过状态断言。
+3. `app/src/main/java/com/byd/proximitylab/target/TargetMonitor.kt:233-247`：重新开始扫描时，`:229` 已 `candidates.clear()`，但 `preservedUncertainty`（`:237-242`）按 `status/targetId/address` 保留整个 UNCERTAIN 报告并在 `:246` 原样复制，`pendingCandidateAddresses` 与 `evidenceDescription`（字段定义见 `app/src/main/java/com/byd/proximitylab/target/TargetBinding.kt:86-94`）仍来自上一会话。UI 可能显示已不在当前候选列表中的待确认候选，以及 `BOUND_ADDRESS_RECENTLY_OBSERVED` / `VERIFIED_IDENTITY_TOKEN` 等过期匹配依据。
+
+### 已尝试的恢复（resume-3）
+
+- 本轮未修改任何实现代码，只按指示记录阻塞状态与阻塞说明。
+- 工作树中本票的 29 个实现/测试文件改动（均在 `app/` 下，+4369/−24）已保存到 WIP 分支 `wip/02-blocked-3`，提交 `3063e7fe11547efeee2624e5928c8219c532cebb`（`wip(02): 未完成`），不含票据文档。
+- 实施分支 `codex/byd-proximity-lab-v1` 只保留本票据文档的阻塞记录提交。
+- 本轮未运行 Gradle 构建或测试；gate 失败结论读自复审输入，未在本次会话中复跑。
+
+### 解除条件（resume-3）
+
+1. 修复 `TargetMonitor.kt:223-250` 的重新扫描身份报告保留逻辑：保留 UNCERTAIN 时同步清理 `pendingCandidateAddresses` 与过期 `evidenceDescription`，使报告与已清空的候选集合一致；补充“停止后重新开始”“蓝牙/权限恢复后重试”用例。
+2. 调整 `AndroidBleScanSourceTest` 的真实扫描用例：观测数为 0 时明确 skip 或单独报告，不把未执行的循环算作通过；能收到广播时对 `ScanResult.toAdvertisement` 的名称、RSSI、地址、UUID、Manufacturer Data、时间字段与 fingerprint 做真实断言。
+3. 补齐 `## Answer` 的绑定与观测读取入口、可用关联策略、人工恢复路径和实车唯一特征待 14 的保守分支说明；复跑 `:app:connectedDebugAndroidTest` 与单元测试，把实际命令与结果写入 Answer。
+4. 全部通过后将 `Status` 改为 `resolved`。
+
+### WIP 分支与提交（resume-3）
+
+- 分支：`wip/02-blocked-3`（基于 `9983fec61a602bd94e48db32b5893ae082336f64`）
+- 提交：`3063e7fe11547efeee2624e5928c8219c532cebb`（`wip(02): 未完成`）
+- 内容：`app/` 下 29 个文件的实现与测试改动，+4369/−24，不含票据文档。
+
 ## Comments
 - claimed at HEAD e734234601e9aac37b36ee7d67d18994827cd69d
 - resumed from wip/02-blocked at 544881080943321ae4ccb994532de0e824f51d3b
 - claimed at HEAD 544881080943321ae4ccb994532de0e824f51d3b
+- resumed from wip/02-blocked-2 at 9983fec61a602bd94e48db32b5893ae082336f64
+- claimed at HEAD 9983fec61a602bd94e48db32b5893ae082336f64
