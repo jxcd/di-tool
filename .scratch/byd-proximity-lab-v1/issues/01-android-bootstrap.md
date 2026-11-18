@@ -1,7 +1,7 @@
 # 01 固定 Android 构建基线并启动四页工程
 
 Type: task
-Status: ready-for-agent
+Status: blocked
 User stories: 37
 
 ## 目标与范围
@@ -22,4 +22,40 @@ User stories: 37
 - [ ] 使用可用设备或模拟器启动 APK 并走通四页、返回和基础 Insets。无设备时仅这部分记为待测。Wrapper/编译/依赖解析失败应写明真实失败点，不能用遗留 APK 代替验证。
 - [ ] Answer 记录实现位置、正常 App 入口、可用命令、产物、测试入口和仍待测试的设备行为。后续票直接使用这一套入口。
 
+## Answer
+
+### 阻塞
+
+票据 01 未完成，不能标记 resolved。构建/测试 gate 的失败结果为：
+
+- APK 检查：min/target/compile = true/true/true，`INTERNET` = false，静态清单与 SDK 核对通过。
+- 安装并启动 `com.byd.proximitylab/com.byd.proximitylab.MainActivity` 后，`pidof com.byd.proximitylab` 输出为空，应用进程未存活。
+
+失败点是启动后进程未存活，因此验收第三条（设备/模拟器走通四页、返回和基础 Insets）无法执行，票据停在 `blocked`。
+
+### 已尝试的恢复
+
+未记录到已实施且有效的恢复动作；本节不虚构尝试历史。目前仅有的依据是上述 gate 输出：安装与启动命令已执行，失败发生在运行期存活，而非构建或安装阶段。后续应按下列顺序取证后再修复：
+
+1. 用 `adb logcat -d`（`crash`/`main` buffer，或按 pid 过滤）取启动即退出的 `FATAL EXCEPTION` 与崩溃栈。
+2. 核对合并 Manifest 的 launcher Activity、主题和 Application 初始化是否与 `MainActivity` 对齐。
+3. 在模拟器上复现，区分设备侧产物问题与运行期初始化问题。
+
+以上是排障方向，不是已完成的操作记录。
+
+### 解除条件
+
+- 修复后重新执行 gate：安装并启动应用后 `pidof com.byd.proximitylab` 能返回存活进程。
+- 用 Wrapper 重跑 `:app:assembleDebug`、`:app:testDebugUnitTest`、`:app:lintDebug` 并记录真实结果。
+- 在设备/模拟器走通四页、返回与基础 Insets，补全验收所需的 Answer 后再将 `Status` 置为 `resolved`。
+
+### WIP 分支与提交
+
+- 分支：`wip/01-blocked`，从 `codex/byd-proximity-lab-v1` 的 `06419cd8a3b9f4c69018e647bfc4c200b8633e18` 创建。
+- 提交：`9ef0ce292959f73f30c090fc3b112fa983169f9e`（`wip(01): 未完成`）。
+- 内容：Gradle Wrapper 与 Version Catalog、`settings.gradle.kts`、根与 `app` 构建脚本、四页 Compose 骨架、测试与 Room 探针、`/.tooling/` 忽略规则。
+- `.tooling/` 是本地 JDK 21 与 Gradle 9.9.1（实测约 476M），按约定不入库，已在 `.git/info/exclude` 本地忽略。
+
 ## Comments
+
+- claimed at HEAD 06419cd8a3b9f4c69018e647bfc4c200b8633e18
