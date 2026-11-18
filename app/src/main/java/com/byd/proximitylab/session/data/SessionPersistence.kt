@@ -10,10 +10,14 @@ import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Transaction
+import com.byd.proximitylab.proximity.ConfirmationRequirement
+import com.byd.proximitylab.proximity.ProximityAlgorithm
+import com.byd.proximitylab.proximity.ProximityConfig
 import com.byd.proximitylab.session.FixedSampleLocation
 import com.byd.proximitylab.session.PhonePlacement
 import com.byd.proximitylab.session.SamplingSession
 import com.byd.proximitylab.session.SamplingType
+import com.byd.proximitylab.session.SessionConfigSnapshot
 import com.byd.proximitylab.session.SessionLifecycleStatus
 import com.byd.proximitylab.session.SessionStore
 import com.byd.proximitylab.session.SessionSummary
@@ -77,6 +81,97 @@ data class SamplingSessionEntity(
             lastRecordedAtEpochMillis = session.lastRecordedAtEpochMillis,
             interruptedDetectedAtEpochMillis = session.interruptedDetectedAtEpochMillis,
         )
+    }
+}
+
+/**
+ * 模拟测试开始时固定的算法与参数快照。
+ *
+ * 快照与 Session 同表关系保存，不引用可编辑配置行，因此原配置改名或删除后仍可解释当次结果。
+ */
+@Entity(
+    tableName = "session_config_snapshot",
+    foreignKeys = [
+        ForeignKey(
+            entity = SamplingSessionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["sessionId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+data class SessionConfigSnapshotEntity(
+    @PrimaryKey val sessionId: String,
+    val snapshotId: String,
+    val name: String,
+    val sourceConfigId: String?,
+    val algorithm: String,
+    val enterThresholdDbm: Int,
+    val exitThresholdDbm: Int,
+    val confirmationKind: String,
+    val confirmationValue: Long,
+    val sampleValidityMillis: Long,
+    val emaAlpha: Double,
+    val algorithmVersion: String,
+    val triggerRuleVersion: String,
+    val schemaVersion: Int,
+) {
+    fun toDomain(): SessionConfigSnapshot = SessionConfigSnapshot(
+        snapshotId = snapshotId,
+        name = name,
+        sourceConfigId = sourceConfigId,
+        config = ProximityConfig(
+            algorithm = ProximityAlgorithm.valueOf(algorithm),
+            enterThresholdDbm = enterThresholdDbm,
+            exitThresholdDbm = exitThresholdDbm,
+            confirmation = when (confirmationKind) {
+                KIND_CONSECUTIVE_SAMPLES -> ConfirmationRequirement.ConsecutiveSamples(
+                    confirmationValue.toInt(),
+                )
+
+                KIND_DURATION -> ConfirmationRequirement.Duration(confirmationValue)
+                else -> error("未知配置确认方式：$confirmationKind")
+            },
+            sampleValidityMillis = sampleValidityMillis,
+            emaAlpha = emaAlpha,
+        ),
+        algorithmVersion = algorithmVersion,
+        triggerRuleVersion = triggerRuleVersion,
+        schemaVersion = schemaVersion,
+    )
+
+    companion object {
+        const val KIND_CONSECUTIVE_SAMPLES: String = "CONSECUTIVE_SAMPLES"
+        const val KIND_DURATION: String = "DURATION"
+
+        fun fromDomain(
+            sessionId: String,
+            snapshot: SessionConfigSnapshot,
+        ): SessionConfigSnapshotEntity {
+            val (kind, value) = when (val confirmation = snapshot.config.confirmation) {
+                is ConfirmationRequirement.ConsecutiveSamples ->
+                    KIND_CONSECUTIVE_SAMPLES to confirmation.minimumSamples.toLong()
+
+                is ConfirmationRequirement.Duration ->
+                    KIND_DURATION to confirmation.minimumDurationMillis
+            }
+            return SessionConfigSnapshotEntity(
+                sessionId = sessionId,
+                snapshotId = snapshot.snapshotId,
+                name = snapshot.name,
+                sourceConfigId = snapshot.sourceConfigId,
+                algorithm = snapshot.config.algorithm.name,
+                enterThresholdDbm = snapshot.config.enterThresholdDbm,
+                exitThresholdDbm = snapshot.config.exitThresholdDbm,
+                confirmationKind = kind,
+                confirmationValue = value,
+                sampleValidityMillis = snapshot.config.sampleValidityMillis,
+                emaAlpha = snapshot.config.emaAlpha,
+                algorithmVersion = snapshot.algorithmVersion,
+                triggerRuleVersion = snapshot.triggerRuleVersion,
+                schemaVersion = snapshot.schemaVersion,
+            )
+        }
     }
 }
 
@@ -276,6 +371,29 @@ interface SamplingSessionDao {
     @Insert
     suspend fun insertSession(entity: SamplingSessionEntity)
 
+    @Insert
+    suspend fun insertConfigSnapshot(entity: SessionConfigSnapshotEntity)
+
+    /**
+     * 同一事务内创建 Session 与配置快照，避免出现有 Session 却没有快照的中间状态。
+     */
+    @Transaction
+    suspend fun insertSessionWithSnapshot(
+        session: SamplingSessionEntity,
+        configSnapshot: SessionConfigSnapshotEntity?,
+    ) {
+        insertSession(session)
+        if (configSnapshot != null) {
+            insertConfigSnapshot(configSnapshot)
+        }
+    }
+
+    @Query("SELECT * FROM session_config_snapshot WHERE sessionId = :sessionId")
+    fun observeConfigSnapshot(sessionId: String): Flow<SessionConfigSnapshotEntity?>
+
+    @Query("SELECT * FROM session_config_snapshot WHERE sessionId = :sessionId")
+    suspend fun loadConfigSnapshot(sessionId: String): SessionConfigSnapshotEntity?
+
     @Query(
         "SELECT s.*, (SELECT COUNT(*) FROM session_timeline t " +
             "WHERE t.sessionId = s.id AND t.kind = 'OBSERVATION') AS observationCount " +
@@ -291,6 +409,9 @@ interface SamplingSessionDao {
 
     @Query("SELECT * FROM sampling_session WHERE status = 'RECORDING'")
     suspend fun loadRecordingSessions(): List<SamplingSessionEntity>
+
+    @Query("DELETE FROM sampling_session WHERE id = :sessionId")
+    suspend fun deleteSession(sessionId: String)
 
     @Insert
     suspend fun insertTimeline(entity: SessionTimelineEntity): Long
@@ -374,6 +495,29 @@ class RoomSessionStore(
         dao.insertSession(SamplingSessionEntity.fromDomain(session))
     }
 
+    override suspend fun createSimulationSession(
+        session: SamplingSession,
+        configSnapshot: SessionConfigSnapshot,
+    ) {
+        dao.insertSessionWithSnapshot(
+            session = SamplingSessionEntity.fromDomain(session),
+            configSnapshot = SessionConfigSnapshotEntity.fromDomain(session.id, configSnapshot),
+        )
+    }
+
+    override fun observeConfigSnapshot(sessionId: String): Flow<SessionConfigSnapshot?> =
+        dao.observeConfigSnapshot(sessionId).map { it?.toDomain() }
+
+    override suspend fun loadConfigSnapshot(sessionId: String): SessionConfigSnapshot? =
+        dao.loadConfigSnapshot(sessionId)?.toDomain()
+
+    override suspend fun saveConfigSnapshot(
+        sessionId: String,
+        configSnapshot: SessionConfigSnapshot,
+    ) {
+        dao.insertConfigSnapshot(SessionConfigSnapshotEntity.fromDomain(sessionId, configSnapshot))
+    }
+
     override suspend fun appendTimeline(
         sessionId: String,
         event: SessionTimelineEvent,
@@ -413,6 +557,10 @@ class RoomSessionStore(
 
     override suspend fun loadRecordingSessions(): List<SamplingSession> =
         dao.loadRecordingSessions().map { it.toDomain() }
+
+    override suspend fun deleteSession(sessionId: String) {
+        dao.deleteSession(sessionId)
+    }
 
     override suspend fun markRecordingSessionsInterrupted(
         detectedAtEpochMillis: Long,

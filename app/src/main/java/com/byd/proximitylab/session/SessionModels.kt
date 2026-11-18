@@ -3,11 +3,12 @@ package com.byd.proximitylab.session
 import com.byd.proximitylab.target.BoundTarget
 
 /**
- * 采样类型。04 只落地定点采样；08 复用同一模型增加行走采样。
+ * 采样类型。04 落地定点采样，05 增加前台模拟测试；08 复用同一模型增加行走采样。
  */
 enum class SamplingType(val label: String) {
     FIXED_POINT("定点采样"),
     WALKING("行走采样"),
+    SIMULATION("模拟测试"),
 }
 
 /**
@@ -190,6 +191,8 @@ data class SessionSummary(
 
 /**
  * 开始采样的输入。目标来自 02 的当前绑定，类型、位置、距离与放置方式由用户选择。
+ *
+ * 05 的模拟测试传入 [configSnapshot]；04/08 的普通采样保持 `null`。
  */
 data class SessionStartRequest(
     val binding: BoundTarget,
@@ -198,6 +201,7 @@ data class SessionStartRequest(
     val location: FixedSampleLocation,
     val estimatedDistanceMeters: Double?,
     val phonePlacement: PhonePlacement,
+    val configSnapshot: SessionConfigSnapshot? = null,
 ) {
     init {
         require(name.isNotBlank()) { "Session 名称不能为空" }
@@ -216,7 +220,14 @@ sealed interface SessionStartResult {
 
 sealed interface SessionStopResult {
 
-    data class Stopped(val session: SamplingSession) : SessionStopResult
+    /**
+     * 正常结束。[finalScanEvent] 是停止时写入时间线的最后一条停扫事件，供实时模拟测试把同一事件
+     * 应用到原始运行状态，保证 09 回放末尾状态与实时记录一致。
+     */
+    data class Stopped(
+        val session: SamplingSession,
+        val finalScanEvent: SessionTimelineEvent.ScanStateChanged? = null,
+    ) : SessionStopResult
 
     data object NotRecording : SessionStopResult
 }

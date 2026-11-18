@@ -131,7 +131,10 @@ class AppContainerWiringTest {
             context,
             ProximityLabDatabase::class.java,
             databaseName,
-        ).addMigrations(ProximityLabDatabase.MIGRATION_1_2).build()
+        ).addMigrations(
+            ProximityLabDatabase.MIGRATION_1_2,
+            ProximityLabDatabase.MIGRATION_2_3,
+        ).build()
         try {
             runBlocking {
                 RoomTargetBindingStore(database.targetBindingDao()).saveBinding(

@@ -1,15 +1,38 @@
 package com.byd.proximitylab.ui.monitor
 
 import androidx.lifecycle.ViewModel
-import com.byd.proximitylab.ui.PageUiState
-import com.byd.proximitylab.ui.navigation.LabDestination
-import com.byd.proximitylab.ui.toPageUiState
-import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.lifecycle.viewModelScope
+import com.byd.proximitylab.live.LiveMonitorController
+import com.byd.proximitylab.live.LiveMonitorState
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
-class MonitorViewModel : ViewModel() {
-    private val _uiState = MutableStateFlow(LabDestination.Monitor.toPageUiState())
+/**
+ * 实时监控与模拟测试入口。控制器位于应用级作用域，ViewModel 重建只重新订阅状态，不结束运行中的 Session。
+ */
+class MonitorViewModel(
+    private val controller: LiveMonitorController,
+) : ViewModel() {
 
-    val uiState: StateFlow<PageUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<LiveMonitorState> = controller.state
+
+    init {
+        controller.startMonitoring()
+    }
+
+    fun startSimulation() {
+        viewModelScope.launch {
+            controller.startSimulation()
+        }
+    }
+
+    fun stopSimulation() {
+        viewModelScope.launch {
+            controller.stopSimulation()
+        }
+    }
+
+    fun clearMessage() {
+        controller.clearMessage()
+    }
 }

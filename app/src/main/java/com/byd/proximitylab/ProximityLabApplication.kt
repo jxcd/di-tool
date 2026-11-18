@@ -9,11 +9,14 @@ import com.byd.proximitylab.data.ProximityLabDatabase
 import com.byd.proximitylab.session.SessionRecorder
 import com.byd.proximitylab.session.SessionStore
 import com.byd.proximitylab.session.data.RoomSessionStore
+import com.byd.proximitylab.simulation.SimulationRunStore
+import com.byd.proximitylab.simulation.data.RoomSimulationRunStore
 import com.byd.proximitylab.target.NoVerifiedIdentityEvidence
 import com.byd.proximitylab.target.TargetAssociationPolicy
 import com.byd.proximitylab.target.TargetBindingStore
 import com.byd.proximitylab.target.TargetMonitor
 import com.byd.proximitylab.target.data.RoomTargetBindingStore
+import com.byd.proximitylab.live.LiveMonitorController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -43,7 +46,10 @@ class AppContainer(
         ProximityLabDatabase::class.java,
         databaseName,
     )
-        .addMigrations(ProximityLabDatabase.MIGRATION_1_2)
+        .addMigrations(
+            ProximityLabDatabase.MIGRATION_1_2,
+            ProximityLabDatabase.MIGRATION_2_3,
+        )
         .build()
 
     val bindingStore: TargetBindingStore = RoomTargetBindingStore(database.targetBindingDao())
@@ -63,12 +69,26 @@ class AppContainer(
 
     val sessionStore: SessionStore = RoomSessionStore(database.samplingSessionDao())
 
+    val simulationRunStore: SimulationRunStore =
+        RoomSimulationRunStore(database.simulationRunDao())
+
     /**
      * 04/05/08/11 共用的会话控制与追加入口。
      */
     val sessionRecorder: SessionRecorder = SessionRecorder(
         store = sessionStore,
         observationSource = targetMonitor,
+        scope = scope,
+    )
+
+    /**
+     * 05 实时监控与前台模拟测试入口。放在应用级作用域，界面旋转、换页或重新订阅不会结束运行中的测试。
+     */
+    val liveMonitorController: LiveMonitorController = LiveMonitorController(
+        observationSource = targetMonitor,
+        recorder = sessionRecorder,
+        sessionStore = sessionStore,
+        simulationStore = simulationRunStore,
         scope = scope,
     )
 

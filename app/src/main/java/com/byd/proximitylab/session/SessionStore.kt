@@ -21,6 +21,28 @@ interface SessionStore {
     suspend fun createSession(session: SamplingSession)
 
     /**
+     * 在同一事务中创建 Session 并保存当次配置快照。
+     *
+     * 默认实现用于简单存储；Room 实现应覆盖为单事务，避免出现有 Session 但没有快照的记录。
+     */
+    suspend fun createSimulationSession(
+        session: SamplingSession,
+        configSnapshot: SessionConfigSnapshot,
+    ) {
+        createSession(session)
+        saveConfigSnapshot(session.id, configSnapshot)
+    }
+
+    fun observeConfigSnapshot(sessionId: String): Flow<SessionConfigSnapshot?>
+
+    suspend fun loadConfigSnapshot(sessionId: String): SessionConfigSnapshot?
+
+    suspend fun saveConfigSnapshot(
+        sessionId: String,
+        configSnapshot: SessionConfigSnapshot,
+    )
+
+    /**
      * 按调用顺序追加一条时间线事件，返回数据库分配的稳定顺序。
      */
     suspend fun appendTimeline(
@@ -45,6 +67,11 @@ interface SessionStore {
     ): SamplingSession?
 
     suspend fun loadRecordingSessions(): List<SamplingSession>
+
+    /**
+     * 删除指定 Session 及其时间线、快照和运行结果。供 08 的 Session 管理和测试清理复用。
+     */
+    suspend fun deleteSession(sessionId: String)
 
     /**
      * 恢复时批量标记遗留的采集中 Session，返回标记数量。

@@ -18,6 +18,7 @@ class InMemorySessionStore : SessionStore {
     private val mutex = Mutex()
     private val sessions = MutableStateFlow<Map<String, SamplingSession>>(emptyMap())
     private val timelines = MutableStateFlow<Map<String, List<SessionTimelineItem>>>(emptyMap())
+    private val snapshots = MutableStateFlow<Map<String, SessionConfigSnapshot>>(emptyMap())
     private var nextSequence: Long = 1L
 
     override fun observeSessions(): Flow<List<SessionSummary>> = sessions.map { stored ->
@@ -43,6 +44,28 @@ class InMemorySessionStore : SessionStore {
     override suspend fun createSession(session: SamplingSession) = mutex.withLock {
         check(session.id !in sessions.value) { "Session 已存在：${session.id}" }
         sessions.update { it + (session.id to session) }
+    }
+
+    override suspend fun createSimulationSession(
+        session: SamplingSession,
+        configSnapshot: SessionConfigSnapshot,
+    ) = mutex.withLock {
+        check(session.id !in sessions.value) { "Session 已存在：${session.id}" }
+        sessions.update { it + (session.id to session) }
+        snapshots.update { it + (session.id to configSnapshot) }
+    }
+
+    override fun observeConfigSnapshot(sessionId: String): Flow<SessionConfigSnapshot?> =
+        snapshots.map { it[sessionId] }
+
+    override suspend fun loadConfigSnapshot(sessionId: String): SessionConfigSnapshot? =
+        mutex.withLock { snapshots.value[sessionId] }
+
+    override suspend fun saveConfigSnapshot(
+        sessionId: String,
+        configSnapshot: SessionConfigSnapshot,
+    ) = mutex.withLock {
+        snapshots.update { it + (sessionId to configSnapshot) }
     }
 
     override suspend fun appendTimeline(
@@ -112,6 +135,12 @@ class InMemorySessionStore : SessionStore {
 
     override suspend fun loadRecordingSessions(): List<SamplingSession> = mutex.withLock {
         sessions.value.values.filter { it.status == SessionLifecycleStatus.RECORDING }
+    }
+
+    override suspend fun deleteSession(sessionId: String) = mutex.withLock {
+        sessions.update { it - sessionId }
+        timelines.update { it - sessionId }
+        snapshots.update { it - sessionId }
     }
 
     override suspend fun markRecordingSessionsInterrupted(

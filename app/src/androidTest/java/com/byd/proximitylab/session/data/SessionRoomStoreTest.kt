@@ -254,7 +254,10 @@ class SessionRoomStoreTest {
             context,
             ProximityLabDatabase::class.java,
             databaseName,
-        ).addMigrations(ProximityLabDatabase.MIGRATION_1_2).build()
+        ).addMigrations(
+            ProximityLabDatabase.MIGRATION_1_2,
+            ProximityLabDatabase.MIGRATION_2_3,
+        ).build()
         database?.close()
         database = opened
         return opened

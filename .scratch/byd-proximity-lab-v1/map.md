@@ -77,6 +77,7 @@ flowchart LR
 
 - 票据 02 已完成：只读 BLE 扫描、单目标人工绑定与身份关联；身份冲突保留原绑定并输出 `UNCERTAIN`；绑定持久化统一到 `ProximityLabDatabase`；7 项复审阻塞关闭。验证：67 JVM tests、15 connected tests（1 skipped 真实广告者）、lint 0 errors；APK 仅 `BLUETOOTH_SCAN(neverForLocation)`。下游：`TargetObservationSource`、`TargetBindingStore`、`TargetAssociationPolicy`；04 复用同一 Room 数据库。
 - 票据 04：定点采样到 Room Session 的首个闭环完成，Session 生命周期、稳定时间线顺序与覆盖终点由共用 `SessionRecorder`/`SessionStore` 提供，数据库 v2 与导出的 schema 支持后续升级。验证：`:app:testDebugUnitTest` 83 tests 0 failures，`:app:connectedDebugAndroidTest` 28 tests 0 failures（1 skipped 真实广告者），`:app:assembleDebug :app:lintDebug` 通过且 APK 无 INTERNET。下游：`SessionRecorder`、`SessionStore`、`SessionModels`、`RoomSessionStore`/`SamplingSessionDao`、`ProximityLabDatabase` v2，供 05、08、09、11 复用。
+- 票据 05：实时监控与前台模拟测试由应用级 `LiveMonitorController` 统一驱动，测试从 `UNKNOWN` 起步，配置快照、时间线与原始事件写入 Room v3 并在持久化后提供反馈入口。验证：`:app:testDebugUnitTest` 98 tests、`:app:connectedDebugAndroidTest` 36 tests（1 skipped 真实广告者）均 0 failures，`:app:assembleDebug :app:lintDebug` 通过且 APK 无 INTERNET；独立复审在真实页面上复验「普通监控 FAR → 测试仅近端样本零事件」、唯一 FAR→NEAR 事件与原因、注入时钟过期、重开不补发及 2→3 迁移。下游：`AppContainer.liveMonitorController`、`SessionConfigSnapshot`（06）、`LiveReadingPoint`/`SimulationTestView`（07/08）、`SessionTimelineProximityRunner`（09）、`SimulationRunStore.updateEventFeedback`/`SimulatedEventFeedbackStatus`（11）。
 ## Fog
 
 - [01](issues/01-android-bootstrap.md) 先实际验证选定版本的构建、KSP、依赖解析与 Lint。供应商文档的支持范围及已核验的 Android AAR 要求见 [Android 技术基线](android-toolchain.md)。

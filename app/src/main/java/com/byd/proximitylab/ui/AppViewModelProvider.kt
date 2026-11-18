@@ -3,6 +3,7 @@ package com.byd.proximitylab.ui
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.byd.proximitylab.live.LiveMonitorController
 import com.byd.proximitylab.session.SessionRecorder
 import com.byd.proximitylab.session.SessionStore
 import com.byd.proximitylab.target.TargetMonitor
@@ -18,9 +19,13 @@ import com.byd.proximitylab.ui.sampling.SamplingViewModel
 object AppViewModelProvider {
 
     val Factory: ViewModelProvider.Factory = viewModelFactory {
-        initializer { MonitorViewModel() }
         initializer { AlgorithmLabViewModel() }
     }
+
+    fun monitorFactory(controller: LiveMonitorController): ViewModelProvider.Factory =
+        viewModelFactory {
+            initializer { MonitorViewModel(controller) }
+        }
 
     fun deviceFactory(monitor: TargetMonitor): ViewModelProvider.Factory = viewModelFactory {
         initializer { DeviceViewModel(monitor) }

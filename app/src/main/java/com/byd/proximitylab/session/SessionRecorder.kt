@@ -5,8 +5,11 @@ import com.byd.proximitylab.target.TargetEvent
 import com.byd.proximitylab.target.TargetIdentityReport
 import com.byd.proximitylab.target.TargetObservationSource
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -35,6 +38,17 @@ class SessionRecorder(
 
     private val _activeSession = MutableStateFlow<SamplingSession?>(null)
     val activeSession: StateFlow<SamplingSession?> = _activeSession.asStateFlow()
+
+    /**
+     * 按数据库写入顺序广播已持久化的时间线事件。
+     *
+     * 05 的实时判定订阅这里而不是再次直接订阅 02 的事件流，保证判定输入顺序与 09 读到的 Session
+     * 时间线一致。订阅者处理较慢时 `emit` 会施加背压，不静默丢弃事件。
+     */
+    private val _recordedEvents = MutableSharedFlow<SessionTimelineItem>(
+        extraBufferCapacity = RECORDED_EVENT_BUFFER_CAPACITY,
+    )
+    val recordedEvents: SharedFlow<SessionTimelineItem> = _recordedEvents.asSharedFlow()
 
     private var lastRecordedScanAvailable: Boolean? = null
     private var lastDroppedTargetEventCount: Int =
@@ -91,12 +105,45 @@ class SessionRecorder(
             lastRecordedAtEpochMillis = startedAt,
             interruptedDetectedAtEpochMillis = null,
         )
-        store.createSession(session)
+        if (request.configSnapshot != null) {
+            // 05 模拟测试：Session 与当次配置快照一起落库；Room 实现使用单事务。
+            store.createSimulationSession(session, request.configSnapshot)
+        } else {
+            store.createSession(session)
+        }
         _activeSession.value = session
         lastRecordedScanAvailable = null
 
         // 共享采集生命周期：Session 拥有本次扫描，05/08/11 复用同一入口时不再重复调用扫描来源。
         observationSource.startScan()
+
+        if (request.configSnapshot != null) {
+            // 模拟测试的时间线必须能重现开始时的扫描与身份条件。TargetMonitor 只在状态变化时发送
+            // 事件；若进入监控页时扫描已开始，同一状态不会再发，因此在这里写入一次起点快照。
+            val scanState = observationSource.state.value.scanState
+            val identity = observationSource.state.value.identity
+            appendLocked(
+                session = session,
+                event = SessionTimelineEvent.ScanStateChanged(
+                    available = scanState is ScanAvailability.Scanning,
+                    stateLabel = scanState.storageLabel(),
+                    detail = "模拟测试开始时的扫描状态。",
+                    processedAtEpochMillis = startedAt,
+                ),
+            )
+            lastRecordedScanAvailable = scanState is ScanAvailability.Scanning
+            appendLocked(
+                session = session,
+                event = SessionTimelineEvent.IdentityChanged(
+                    confirmed = identity.status == com.byd.proximitylab.target.IdentityStatus.CONFIRMED,
+                    statusLabel = identity.status.name,
+                    targetId = identity.targetId,
+                    basisLabel = identity.basis?.name,
+                    detail = identity.uncertainty?.detail ?: identity.evidenceDescription,
+                    processedAtEpochMillis = startedAt,
+                ),
+            )
+        }
         SessionStartResult.Started(session)
     }
 
@@ -113,23 +160,23 @@ class SessionRecorder(
         )
 
         // 监听器中的扫描停止事件是异步的；在正常结束前显式写入停止状态，避免它落在 Session 之外。
+        var finalScanEvent: SessionTimelineEvent.ScanStateChanged? = null
         if (lastRecordedScanAvailable != false) {
-            appendLocked(
-                session = session,
-                event = SessionTimelineEvent.ScanStateChanged(
-                    available = false,
-                    stateLabel = ScanAvailability.Stopped.storageLabel(),
-                    detail = "用户停止采样。",
-                    processedAtEpochMillis = endedAt,
-                ),
+            val event = SessionTimelineEvent.ScanStateChanged(
+                available = false,
+                stateLabel = ScanAvailability.Stopped.storageLabel(),
+                detail = "用户停止采样。",
+                processedAtEpochMillis = endedAt,
             )
+            appendLocked(session = session, event = event)
+            finalScanEvent = event
             lastRecordedScanAvailable = false
         }
 
         val completed = store.completeSession(session.id, endedAt) ?: session
         _activeSession.value = null
         observationSource.stopScan()
-        SessionStopResult.Stopped(completed)
+        SessionStopResult.Stopped(completed, finalScanEvent)
     }
 
     private suspend fun handleDroppedTargetEvents(count: Int) {
@@ -204,7 +251,7 @@ class SessionRecorder(
         session: SamplingSession,
         event: SessionTimelineEvent,
     ): SamplingSession {
-        store.appendTimeline(session.id, event)
+        val item = store.appendTimeline(session.id, event)
         val updated = session.copy(
             lastRecordedAtEpochMillis = maxOf(
                 session.lastRecordedAtEpochMillis,
@@ -212,6 +259,7 @@ class SessionRecorder(
             ),
         )
         _activeSession.value = updated
+        _recordedEvents.emit(item)
         return updated
     }
 
@@ -245,5 +293,9 @@ class SessionRecorder(
 
         is ScanAvailability.Failed -> reason
         else -> null
+    }
+
+    private companion object {
+        const val RECORDED_EVENT_BUFFER_CAPACITY = 256
     }
 }
