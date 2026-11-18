@@ -73,6 +73,7 @@ flowchart LR
 - 把软件验证、可控 BLE 验收与目标车验收分别记录。算法夹具能证明事件契约，锁车休眠和锁屏通知需现场证据。
 - `BLUETOOTH_SCAN` 使用 `neverForLocation`，实际目标广播过滤表现由 13/14 记录。
 - 票据 01 已完成：Android 工程基线固定并实际验证（Gradle 9.9.1、JDK 21、AGP 9.5.1、Kotlin/Compose Compiler 2.4.21、KSP 2.3.14；minSdk 31 / compileSdk 37 / targetSdk 36；四页导航与 Room KSP 探针）。验证：assembleDebug、testDebugUnitTest、lintDebug、connectedDebugAndroidTest（3/3）通过，APK 无 INTERNET。下游入口：MainActivity、ProximityLabApp、LabDestination 与各页 ViewModel。
+- 票据 03：纯 Kotlin 共享接近判定 `ProximityEngine` 从 `UNKNOWN` 起按有序会话时间线只在确认 `FAR` 后触发一次 `ENTERED_RANGE`，停扫、过期、身份失去确认与改绑撤销触发资格，决策与事件携带算法/触发规则版本；验证：`:app:assembleDebug :app:testDebugUnitTest --rerun-tasks` 全量 37 tests 0 failures、聚焦 `--tests 'com.byd.proximitylab.proximity.*'` 32 tests 0 failures、`:app:lintDebug` 通过、aapt2 badging 为 minSdk 31 / targetSdk 36 / `BLUETOOTH_SCAN` neverForLocation / 无 INTERNET；下游：`com.byd.proximitylab.proximity.ProximityEngine` 的 observe/advanceTo/setScanAvailable/setTargetIdentity/rebindTarget，`ProximityTestHarness` 与 P1–P9 夹具供 05、09、12 复用。
 
 ## Fog
 
