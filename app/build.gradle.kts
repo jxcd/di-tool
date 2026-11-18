@@ -52,6 +52,18 @@ android {
     buildFeatures {
         compose = true
     }
+
+    sourceSets {
+        // JVM 与 Android 测试共享同一套 BLE 边界夹具，避免两份同名实现产生语义分叉。
+        getByName("test") {
+            java.directories.add("src/sharedTest/java")
+            kotlin.directories.add("src/sharedTest/java")
+        }
+        getByName("androidTest") {
+            java.directories.add("src/sharedTest/java")
+            kotlin.directories.add("src/sharedTest/java")
+        }
+    }
 }
 
 kotlin {

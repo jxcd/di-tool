@@ -15,7 +15,7 @@ enum class LabDestination(
         label = "设备",
         headline = "设备",
         description = "扫描附近的 BLE 设备，确认需要监测的目标。",
-        pendingWork = "只读扫描、候选展示与人工绑定由票据 02 接入。",
+        pendingWork = "只读扫描、候选展示与人工绑定已在设备页提供。",
     ),
     Monitor(
         route = "monitor",

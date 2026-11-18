@@ -1,7 +1,6 @@
 package com.byd.proximitylab.ui
 
 import androidx.lifecycle.ViewModel
-import com.byd.proximitylab.ui.device.DeviceViewModel
 import com.byd.proximitylab.ui.lab.AlgorithmLabViewModel
 import com.byd.proximitylab.ui.monitor.MonitorViewModel
 import com.byd.proximitylab.ui.navigation.LabDestination
@@ -13,9 +12,8 @@ import org.junit.Test
 class PageViewModelTest {
 
     @Test
-    fun everyPageViewModelExposesItsOwnNonBlankState() {
+    fun everyPlaceholderViewModelExposesItsOwnNonBlankState() {
         val viewModels: List<ViewModel> = listOf(
-            DeviceViewModel(),
             MonitorViewModel(),
             SamplingViewModel(),
             AlgorithmLabViewModel(),
@@ -23,7 +21,6 @@ class PageViewModelTest {
 
         val states = viewModels.map { viewModel ->
             when (viewModel) {
-                is DeviceViewModel -> viewModel.uiState.value
                 is MonitorViewModel -> viewModel.uiState.value
                 is SamplingViewModel -> viewModel.uiState.value
                 is AlgorithmLabViewModel -> viewModel.uiState.value
@@ -31,14 +28,13 @@ class PageViewModelTest {
             }
         }
 
-        assertEquals(4, states.map(PageUiState::title).toSet().size)
+        assertEquals(3, states.map(PageUiState::title).toSet().size)
         assertTrue(states.all { it.title.isNotBlank() })
         assertTrue(states.all { it.description.isNotBlank() })
     }
 
     @Test
-    fun viewModelStatesMatchTheirDestinationCopy() {
-        assertEquals(LabDestination.Device.headline, DeviceViewModel().uiState.value.title)
+    fun placeholderViewModelStatesMatchTheirDestinationCopy() {
         assertEquals(LabDestination.Monitor.headline, MonitorViewModel().uiState.value.title)
         assertEquals(LabDestination.Sampling.headline, SamplingViewModel().uiState.value.title)
         assertEquals(LabDestination.Lab.headline, AlgorithmLabViewModel().uiState.value.title)

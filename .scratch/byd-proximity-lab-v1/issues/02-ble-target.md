@@ -1,7 +1,7 @@
 # 02 实现 BLE 发现、人工绑定和目标关联
 
 Type: task
-Status: blocked
+Status: resolved
 Blocked by: 01
 User stories: 1, 2, 3, 4, 5, 6, 7
 
@@ -135,6 +135,53 @@ User stories: 1, 2, 3, 4, 5, 6, 7
 - 分支：`wip/02-blocked-3`（基于 `9983fec61a602bd94e48db32b5893ae082336f64`）
 - 提交：`3063e7fe11547efeee2624e5928c8219c532cebb`（`wip(02): 未完成`）
 - 内容：`app/` 下 29 个文件的实现与测试改动，+4369/−24，不含票据文档。
+
+
+### 恢复后完成
+
+本轮从 `wip/02-blocked-3` 恢复代码，按上一轮复审的 7 项阻塞逐项修复，并由独立复审员复核通过（approved=true；仅 low 项已处理或记录）。
+
+#### 完成内容
+
+- 只读 BLE 扫描：`BLUETOOTH_SCAN`（`neverForLocation`），名称从扫描记录读取，无 `BLUETOOTH_CONNECT`、配对、连接或 GATT；提供扫描状态、目标观测、候选与设备页入口。
+- 单绑定目标与身份关联：`TargetAssociationPolicy` 支持地址匹配、原绑定地址仍在最近候选、可复验 token 唯一匹配；默认 `NoVerifiedIdentityEvidence`，品牌、名称、厂商 ID、RSSI 与未实测载荷前缀不作为唯一证据；身份冲突保留原绑定并输出 `UNCERTAIN`；提供人工重新确认、改绑、解除绑定。
+- 绑定持久化统一到 `ProximityLabDatabase`（`proximity-lab.db`）的 TargetBinding 表/DAO；04 沿用该数据库，不再保留独立 `target-binding.db`。
+- 设备页展示名称、RSSI、地址、Service UUID、Manufacturer Data（空字段显示“未知”）、最近发现时间、扫描/身份状态、候选冲突与恢复入口。
+- `TargetMonitor` 在 bind/reconfirm/rebind/clear/store reload/地址延续时重置 per-target 观测状态；扫描重启、蓝牙或权限恢复保留 `UNCERTAIN`，但清空过期 `pendingCandidateAddresses` 与 `evidenceDescription`/`uncertainty.detail`。
+
+#### 实际验证
+
+- `JAVA_HOME=$PWD/.tooling/jdk-21 ... :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --rerun-tasks` → BUILD SUCCESSFUL；JVM 67 tests、0 failures、0 skipped；lint 0 errors、3 warnings（OldTargetApi、ObsoleteSdkInt、MonochromeLauncherIcon，均为 01 既有基线）。
+- `... :app:connectedDebugAndroidTest --rerun-tasks`（emulator-5554/API 37）→ BUILD SUCCESSFUL；15 tests、0 failures、0 errors、1 skipped（真实广告者字段用例在无 BLE 广告者时 Assume 跳过）；`test-result-exit-code` 为 0。
+- `aapt2 dump badging/permissions` → compileSdk 37、minSdk 31、targetSdk 36；仅 `BLUETOOTH_SCAN(neverForLocation)` 与系统 `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`；无 `INTERNET`、`BLUETOOTH_CONNECT`、`BLUETOOTH_ADVERTISE`、`BLUETOOTH_ADMIN` 或定位权限。
+- `rg` 检查 app/src/main、test、androidTest、sharedTest → 无 `createBond`/`pairDevice`/`connectGatt`/`BluetoothGatt`/`BluetoothSocket`/`BLUETOOTH_CONNECT`/`INTERNET` 调用；仅说明性注释。
+- 真实 `ScanRecord` 解析：`realScanRecordIsParsedIntoAdvertisementFields` 使用平台 `ScanRecord.parseFromBytes` 断言名称、RSSI、地址、UUID、Manufacturer Data、观测/接收时间与 fingerprint；`missingScanRecordKeepsFieldsUnknown...` 断言缺失字段为未知。
+- 只读扫描生命周期：`readOnlyScanStartsAndStopsOnAvailableAdapter` 在 API 37 模拟器真实执行 Idle→Scanning→Stopped→Scanning→Stopped。
+- 夹具：`app/src/sharedTest/java/com/byd/proximitylab/testing/TestFixtures.kt` 为唯一实现，`app/build.gradle.kts:56-66` 同时挂到 test 与 androidTest。
+- 本轮额外修复：扫描重启保留 `UNCERTAIN` 时同步清理 `uncertainty.detail`；`publishIdentity` 的变化判定纳入 `pendingCandidateAddresses`/`evidenceDescription`/`uncertainty.detail`，确保只订阅事件的消费者也能看到清理。
+
+#### 7 项阻塞关闭情况
+
+1. per-target 观测状态：bind/reconfirm/rebind/clear/store reload/地址延续均调用重置；`TargetMonitorTest` 15 tests（含 `scanRestartDropsConfirmedSessionEvidenceAndPendingCandidates`、`storeReloadOfNewBindingResetsTargetObservationState`）0 failures。
+2. 扫描重启身份报告：保留 `UNCERTAIN`（targetId/bindingAddress 一致），清理 `pendingCandidateAddresses`/`evidenceDescription`/`uncertainty.detail`；`CONFIRMED` 回落 `PERSISTED_BINDING`；`TargetMonitorTest` 与 `DeviceScreenTest` 覆盖停止重启、蓝牙恢复、权限恢复。
+3. 空字段未知：`DeviceScreen` 对 Service UUID、Manufacturer Data、名称为空显示“未知/名称未知”；`DeviceScreenTest` 断言未知语义。
+4. 票据收尾：本节 + `Status: resolved` + `map.md` 更新。
+5. 真实扫描测试：生命周期真实执行；字段断言独立用例在无广告者时显式 `Assume` skip；真实广播端到端字段值待 13/14。
+6. 夹具唯一：sharedTest 单份，sourceSets 同时挂载。
+7. 统一 Room：`ProximityLabDatabase`（`proximity-lab.db`）为唯一生产数据库；`TargetBindingPersistence` 复用；无 `TargetBindingDatabase`。
+
+#### 公开入口与下游
+
+- `TargetObservationSource`：`state`/`events`/`startScan`/`stopScan`；`TargetBindingStore`；`TargetAssociationPolicy`；设备页人工恢复入口（重新确认/改绑/解除绑定）。
+- 05 接入 `state`/`events`，使用 `TargetObservation` 与 `TargetIdentityReport`；04 复用 `ProximityLabDatabase` 的 TargetBinding 表并新增 Session 表。
+- 身份策略默认 `NoVerifiedIdentityEvidence`；品牌、名称、厂商 ID、RSSI、未实测载荷前缀不作为唯一证据；实车唯一特征由 14 验证。
+
+#### 未测项
+
+- 真实 BLE 广告者的端到端字段值：本机无广告者，待 13/14；解析器字段映射已由真实 `ScanRecord` 测试覆盖。
+- 目标车地址轮换的唯一关联证据、锁车休眠广播、相邻同款车干扰：待 14。
+- Android 12（API 31）设备：当前仅 API 37 模拟器。
+- 锁屏/前台服务通知：由 11/13/14。
 
 ## Comments
 - claimed at HEAD e734234601e9aac37b36ee7d67d18994827cd69d
