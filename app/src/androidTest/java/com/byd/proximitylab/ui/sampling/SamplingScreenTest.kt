@@ -266,6 +266,7 @@ class SamplingScreenTest {
         ).addMigrations(
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
+            ProximityLabDatabase.MIGRATION_3_4,
         ).build()
         val bindingStore = RoomTargetBindingStore(database.targetBindingDao())
         if (persistBinding) {

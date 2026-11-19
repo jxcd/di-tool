@@ -4,6 +4,12 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.byd.proximitylab.algorithmconfig.AlgorithmConfigStore
+import com.byd.proximitylab.algorithmconfig.BuiltInAlgorithmConfigs
+import com.byd.proximitylab.algorithmconfig.data.RoomAlgorithmConfigStore
+import com.byd.proximitylab.proximity.ConfirmationRequirement
+import com.byd.proximitylab.proximity.ProximityAlgorithm
+import com.byd.proximitylab.proximity.ProximityConfig
 import com.byd.proximitylab.proximity.ProximityEventReason
 import com.byd.proximitylab.proximity.ProximityEventType
 import com.byd.proximitylab.session.FixedSampleLocation
@@ -19,6 +25,7 @@ import com.byd.proximitylab.simulation.data.RoomSimulationRunStore
 import com.byd.proximitylab.target.BoundTarget
 import com.byd.proximitylab.target.TargetAction
 import com.byd.proximitylab.target.data.RoomTargetBindingStore
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -69,6 +76,7 @@ class ProximityLabDatabaseMigrationTest {
         ).addMigrations(
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
+            ProximityLabDatabase.MIGRATION_3_4,
         ).build()
 
         try {
@@ -112,7 +120,7 @@ class ProximityLabDatabaseMigrationTest {
             assertEquals(session.id, sessionStore.loadSession(session.id)?.id)
             assertEquals(1, sessionStore.loadTimeline(session.id).size)
             assertEquals(
-                3,
+                4,
                 database.openHelper.readableDatabase
                     .query("PRAGMA user_version")
                     .use { cursor ->
@@ -133,6 +141,7 @@ class ProximityLabDatabaseMigrationTest {
         ).addMigrations(
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
+            ProximityLabDatabase.MIGRATION_3_4,
         ).build()
         try {
             assertEquals(expectedBinding, RoomTargetBindingStore(reopened.targetBindingDao()).loadBinding())
@@ -156,6 +165,7 @@ class ProximityLabDatabaseMigrationTest {
         ).addMigrations(
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
+            ProximityLabDatabase.MIGRATION_3_4,
         ).build()
 
         try {
@@ -197,7 +207,7 @@ class ProximityLabDatabaseMigrationTest {
             )
             assertEquals(1, runStore.loadEvents(V2_SESSION_ID).size)
             assertEquals(
-                3,
+                4,
                 database.openHelper.readableDatabase
                     .query("PRAGMA user_version")
                     .use { cursor ->
@@ -216,6 +226,7 @@ class ProximityLabDatabaseMigrationTest {
         ).addMigrations(
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
+            ProximityLabDatabase.MIGRATION_3_4,
         ).build()
         try {
             val sessionStore = RoomSessionStore(reopened.samplingSessionDao())
@@ -227,6 +238,63 @@ class ProximityLabDatabaseMigrationTest {
             )
         } finally {
             reopened.close()
+        }
+    }
+
+    @Test
+    fun version3SessionSnapshotSurvivesMigrationAndAlgorithmConfigTablesAreUsable() = runBlocking {
+        createVersion3DatabaseWithSnapshot()
+
+        val database = Room.databaseBuilder(
+            context,
+            ProximityLabDatabase::class.java,
+            databaseName,
+        ).addMigrations(
+            ProximityLabDatabase.MIGRATION_1_2,
+            ProximityLabDatabase.MIGRATION_2_3,
+            ProximityLabDatabase.MIGRATION_3_4,
+        ).build()
+
+        try {
+            val sessionStore = RoomSessionStore(database.samplingSessionDao())
+            val snapshot = requireNotNull(sessionStore.loadConfigSnapshot(V2_SESSION_ID))
+            assertEquals("迁移前用户配置", snapshot.name)
+            assertEquals("migrated-user-config", snapshot.sourceConfigId)
+            assertEquals(ProximityAlgorithm.EMA, snapshot.config.algorithm)
+            assertEquals(-62, snapshot.config.enterThresholdDbm)
+            assertEquals(0.35, snapshot.config.emaAlpha, 0.0)
+            assertEquals(3, sessionStore.loadTimeline(V2_SESSION_ID).size)
+
+            val configStore: AlgorithmConfigStore =
+                RoomAlgorithmConfigStore(database.algorithmConfigDao())
+            assertEquals(
+                listOf("builtin-baseline-v1", "builtin-ema-v1"),
+                configStore.observeConfigs().first().map { it.configId },
+            )
+            val created = configStore.createConfig(
+                name = "迁移后配置",
+                config = ProximityConfig(
+                    algorithm = ProximityAlgorithm.EMA,
+                    enterThresholdDbm = -60,
+                    exitThresholdDbm = -80,
+                    confirmation = ConfirmationRequirement.ConsecutiveSamples(2),
+                    sampleValidityMillis = 5_000L,
+                    emaAlpha = 0.4,
+                ),
+            )
+            assertEquals(true, configStore.selectConfig(created.configId))
+            assertEquals(created.configId, configStore.loadSelectedConfigId())
+            assertEquals(
+                4,
+                database.openHelper.readableDatabase
+                    .query("PRAGMA user_version")
+                    .use { cursor ->
+                        cursor.moveToFirst()
+                        cursor.getInt(0)
+                    },
+            )
+        } finally {
+            database.close()
         }
     }
 
@@ -353,6 +421,121 @@ class ProximityLabDatabaseMigrationTest {
                 )
             }
             database.version = 2
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun createVersion3DatabaseWithSnapshot() {
+        createVersion2DatabaseWithSession()
+        val database = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
+        try {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `session_config_snapshot` (
+                    `sessionId` TEXT NOT NULL,
+                    `snapshotId` TEXT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `sourceConfigId` TEXT,
+                    `algorithm` TEXT NOT NULL,
+                    `enterThresholdDbm` INTEGER NOT NULL,
+                    `exitThresholdDbm` INTEGER NOT NULL,
+                    `confirmationKind` TEXT NOT NULL,
+                    `confirmationValue` INTEGER NOT NULL,
+                    `sampleValidityMillis` INTEGER NOT NULL,
+                    `emaAlpha` REAL NOT NULL,
+                    `algorithmVersion` TEXT NOT NULL,
+                    `triggerRuleVersion` TEXT NOT NULL,
+                    `schemaVersion` INTEGER NOT NULL,
+                    PRIMARY KEY(`sessionId`),
+                    FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `session_run_event` (
+                    `eventId` TEXT NOT NULL,
+                    `sessionId` TEXT NOT NULL,
+                    `type` TEXT NOT NULL,
+                    `reason` TEXT NOT NULL,
+                    `atEpochMillis` INTEGER NOT NULL,
+                    `atSessionMillis` INTEGER NOT NULL,
+                    `targetId` TEXT NOT NULL,
+                    `frameId` INTEGER NOT NULL,
+                    `observedAtEpochMillis` INTEGER NOT NULL,
+                    `rawRssiDbm` INTEGER NOT NULL,
+                    `filteredRssiDbm` REAL NOT NULL,
+                    `algorithmVersion` TEXT NOT NULL,
+                    `triggerRuleVersion` TEXT NOT NULL,
+                    `feedbackStatus` TEXT NOT NULL,
+                    `feedbackDetail` TEXT,
+                    `feedbackUpdatedAtEpochMillis` INTEGER,
+                    PRIMARY KEY(`eventId`),
+                    FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_session_run_event_sessionId` " +
+                    "ON `session_run_event` (`sessionId`)",
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_session_run_event_sessionId_atSessionMillis` " +
+                    "ON `session_run_event` (`sessionId`, `atSessionMillis`)",
+            )
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `session_run_state` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `sessionId` TEXT NOT NULL,
+                    `atEpochMillis` INTEGER NOT NULL,
+                    `atSessionMillis` INTEGER NOT NULL,
+                    `targetId` TEXT NOT NULL,
+                    `state` TEXT NOT NULL,
+                    `reason` TEXT NOT NULL,
+                    `trend` TEXT NOT NULL,
+                    `lastReadingFrameId` INTEGER,
+                    `lastReadingObservedAtEpochMillis` INTEGER,
+                    `rawRssiDbm` INTEGER,
+                    `filteredRssiDbm` REAL,
+                    `algorithmVersion` TEXT NOT NULL,
+                    `triggerRuleVersion` TEXT NOT NULL,
+                    FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_session_run_state_sessionId` " +
+                    "ON `session_run_state` (`sessionId`)",
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_session_run_state_sessionId_atSessionMillis` " +
+                    "ON `session_run_state` (`sessionId`, `atSessionMillis`)",
+            )
+            database.execSQL(
+                "INSERT INTO `session_config_snapshot` VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>(
+                    V2_SESSION_ID,
+                    "migrated-user-config@1800000000000",
+                    "迁移前用户配置",
+                    "migrated-user-config",
+                    ProximityAlgorithm.EMA.name,
+                    -62,
+                    -82,
+                    "CONSECUTIVE_SAMPLES",
+                    3L,
+                    5_000L,
+                    0.35,
+                    "proximity-algorithms/1",
+                    "confirmed-far-then-near/1",
+                    1,
+                ),
+            )
+            database.version = 3
         } finally {
             database.close()
         }

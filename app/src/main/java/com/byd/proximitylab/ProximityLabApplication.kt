@@ -3,6 +3,8 @@ package com.byd.proximitylab
 import android.app.Application
 import android.content.Context
 import androidx.room.Room
+import com.byd.proximitylab.algorithmconfig.AlgorithmConfigStore
+import com.byd.proximitylab.algorithmconfig.data.RoomAlgorithmConfigStore
 import com.byd.proximitylab.ble.AndroidBleScanSource
 import com.byd.proximitylab.ble.BleScanSource
 import com.byd.proximitylab.data.ProximityLabDatabase
@@ -49,12 +51,19 @@ class AppContainer(
         .addMigrations(
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
+            ProximityLabDatabase.MIGRATION_3_4,
         )
         .build()
 
     val bindingStore: TargetBindingStore = RoomTargetBindingStore(database.targetBindingDao())
 
     val scanSource: BleScanSource = scanSource
+
+    /**
+     * 06 的算法配置与当前生效项。内置 Baseline/EMA 由代码固定，用户配置与选择保存在同一数据库中。
+     */
+    val algorithmConfigStore: AlgorithmConfigStore =
+        RoomAlgorithmConfigStore(database.algorithmConfigDao())
 
     /**
      * 生产环境暂不提供可复验身份证据：真实车辆地址轮换的唯一依据留给票据 14。

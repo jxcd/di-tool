@@ -4,6 +4,9 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.byd.proximitylab.algorithmconfig.data.AlgorithmConfigDao
+import com.byd.proximitylab.algorithmconfig.data.AlgorithmConfigEntity
+import com.byd.proximitylab.algorithmconfig.data.AlgorithmSelectionEntity
 import com.byd.proximitylab.session.data.SamplingSessionDao
 import com.byd.proximitylab.session.data.SamplingSessionEntity
 import com.byd.proximitylab.session.data.SessionConfigSnapshotEntity
@@ -18,8 +21,9 @@ import com.byd.proximitylab.target.data.TargetBindingDao
  * 全 App 唯一的 Room 数据库。
  *
  * 02 在这里落地绑定目标表；04 提升到版本 2 并增量添加采样 Session 与时间线表；05 提升到版本 3，
- * 增加模拟测试配置快照、事件和状态结果。迁移保留已有绑定和已采数据，后续切片不要新建第二个 Room
- * 数据库，也不能用 destructive fallback 丢弃历史记录。
+ * 增加模拟测试配置快照、事件和状态结果；06 提升到版本 4，增加用户算法配置和当前选择。
+ * 迁移保留已有绑定、已采数据和已保存的配置快照，后续切片不要新建第二个 Room 数据库，
+ * 也不能用 destructive fallback 丢弃历史记录。
  */
 @Database(
     entities = [
@@ -29,8 +33,10 @@ import com.byd.proximitylab.target.data.TargetBindingDao
         SessionConfigSnapshotEntity::class,
         SessionRunEventEntity::class,
         SessionRunStateEntity::class,
+        AlgorithmConfigEntity::class,
+        AlgorithmSelectionEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class ProximityLabDatabase : RoomDatabase() {
@@ -39,6 +45,8 @@ abstract class ProximityLabDatabase : RoomDatabase() {
     abstract fun samplingSessionDao(): SamplingSessionDao
 
     abstract fun simulationRunDao(): SimulationRunDao
+
+    abstract fun algorithmConfigDao(): AlgorithmConfigDao
 
     companion object {
         const val NAME: String = "proximity-lab.db"
@@ -200,6 +208,44 @@ abstract class ProximityLabDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_session_run_state_sessionId_atSessionMillis` " +
                         "ON `session_run_state` (`sessionId`, `atSessionMillis`)",
+                )
+            }
+        }
+
+        /**
+         * 05 → 06：保留已有 Session、时间线和配置快照，新增用户算法配置与当前选择。
+         *
+         * 内置 Baseline/EMA 不落表；选择表只保存单行当前生效标识，内置项也可作为标识保存。
+         */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `algorithm_config` (
+                        `configId` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `algorithm` TEXT NOT NULL,
+                        `enterThresholdDbm` INTEGER NOT NULL,
+                        `exitThresholdDbm` INTEGER NOT NULL,
+                        `confirmationKind` TEXT NOT NULL,
+                        `confirmationValue` INTEGER NOT NULL,
+                        `sampleValidityMillis` INTEGER NOT NULL,
+                        `emaAlpha` REAL NOT NULL,
+                        `createdAtEpochMillis` INTEGER NOT NULL,
+                        `updatedAtEpochMillis` INTEGER NOT NULL,
+                        PRIMARY KEY(`configId`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `algorithm_selection` (
+                        `slot` INTEGER NOT NULL,
+                        `configId` TEXT NOT NULL,
+                        `updatedAtEpochMillis` INTEGER NOT NULL,
+                        PRIMARY KEY(`slot`)
+                    )
+                    """.trimIndent(),
                 )
             }
         }

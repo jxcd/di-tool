@@ -329,6 +329,9 @@ private fun rememberMonitorViewModel(): MonitorViewModel {
     val context = LocalContext.current
     val application = context.applicationContext as ProximityLabApplication
     return viewModel(
-        factory = AppViewModelProvider.monitorFactory(application.container.liveMonitorController),
+        factory = AppViewModelProvider.monitorFactory(
+            controller = application.container.liveMonitorController,
+            configStore = application.container.algorithmConfigStore,
+        ),
     )
 }
