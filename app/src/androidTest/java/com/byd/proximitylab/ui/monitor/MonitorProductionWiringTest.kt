@@ -65,6 +65,16 @@ class MonitorProductionWiringTest {
     }
 
     @Test
+    fun monitorDeviceEntryNavigatesToDevicePage() {
+        composeRule.onNodeWithTag("nav_monitor").performClick()
+        composeRule.waitUntil(TIMEOUT_MILLIS) {
+            composeRule.onAllNodesWithTag("monitor_open_device").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("monitor_open_device").performScrollTo().performClick()
+        composeRule.onNodeWithTag("screen_device").assertIsDisplayed()
+    }
+
+    @Test
     fun productionMonitorEntryStartsSimulationWithSnapshotAndStopsIt() {
         val binding = testBinding(
             targetId = TARGET_ID,

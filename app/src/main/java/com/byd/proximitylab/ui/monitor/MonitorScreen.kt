@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -25,13 +26,22 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.byd.proximitylab.ProximityLabApplication
 import com.byd.proximitylab.ble.ScanAvailability
+import com.byd.proximitylab.chart.RssiChartWindow
 import com.byd.proximitylab.live.LiveMonitorState
+import com.byd.proximitylab.live.LiveReadingPoint
 import com.byd.proximitylab.live.SimulationTestView
+import com.byd.proximitylab.live.observationIntervalMillis
+import com.byd.proximitylab.proximity.ConfirmationRequirement
+import com.byd.proximitylab.proximity.ProximityAlgorithm
 import com.byd.proximitylab.session.SessionLifecycleStatus
+import com.byd.proximitylab.session.SamplingType
 import com.byd.proximitylab.session.durationMillis
 import com.byd.proximitylab.simulation.SessionRunEvent
+import com.byd.proximitylab.simulation.SimulationEventHistory
+import com.byd.proximitylab.simulation.SimulationEventHistoryEntry
 import com.byd.proximitylab.target.IdentityStatus
 import com.byd.proximitylab.ui.AppViewModelProvider
+import com.byd.proximitylab.ui.chart.RssiChart
 import com.byd.proximitylab.ui.navigation.LabDestination
 import java.time.Instant
 import java.time.ZoneId
@@ -39,16 +49,20 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * 05 的实时监控入口：展示普通监控与主动模拟测试的判定，提供开始/结束和最近事件。
- * 07 在此基础上扩展完整图表和事件历史。
+ * 05 的实时监控入口；07 增加状态区分、近期曲线、时间窗、完整模拟事件历史和设备页入口。
+ * 08/10 可直接复用 [RssiChart] 和只读图表输入。
  */
 @Composable
 fun MonitorScreen(
     modifier: Modifier = Modifier,
     viewModel: MonitorViewModel = rememberMonitorViewModel(),
+    onOpenDevice: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val chartState by viewModel.chartState.collectAsStateWithLifecycle()
+    val history by viewModel.eventHistory.collectAsStateWithLifecycle()
     val displayed = uiState.displayDecision
+    val status = MonitorStatusFormatter.describe(uiState)
 
     Column(
         modifier = modifier
@@ -71,7 +85,11 @@ fun MonitorScreen(
             )
         }
 
-        TargetAndScanCard(uiState = uiState)
+        TargetAndScanCard(
+            uiState = uiState,
+            status = status,
+            onOpenDevice = onOpenDevice,
+        )
 
         OutlinedCard(modifier = Modifier.fillMaxWidth().testTag("monitor_decision")) {
             Column(
@@ -111,15 +129,33 @@ fun MonitorScreen(
                 Text(
                     modifier = Modifier.testTag("monitor_thresholds"),
                     text = "阈值：进入 ${displayed.enterThresholdDbm} dBm · 离开 ${displayed.exitThresholdDbm} dBm · " +
-                        displayed.algorithm.name,
+                        algorithmLabel(displayed.algorithm),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    modifier = Modifier.testTag("monitor_config_summary"),
+                    text = "配置：${displayed.configName.ifBlank { "未知" }} · " +
+                        "确认 ${confirmationLabel(displayed.confirmation)} · " +
+                        "过期 ${displayed.sampleValidityMillis} ms" +
+                        (if (displayed.algorithm == ProximityAlgorithm.EMA) {
+                            " · α ${"%.2f".format(Locale.ROOT, displayed.emaAlpha)}"
+                        } else {
+                            ""
+                        }),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
                     modifier = Modifier.testTag("monitor_last_observation"),
-                    text = "最后观测：${displayed.lastObservationAtEpochMillis?.let(::formatMonitorTime) ?: "尚无"}",
+                    text = "最后观测：${uiState.displayLastObservationAtEpochMillis?.let(::formatMonitorTime) ?: "尚无"}",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
+                    modifier = Modifier.testTag("monitor_observation_interval"),
+                    text = observationIntervalLabel(uiState.displaySamples),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    modifier = Modifier.testTag("monitor_sample_count"),
                     text = "样本数：${uiState.targetObservationCount}",
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -153,10 +189,36 @@ fun MonitorScreen(
                 Text("结束测试")
             }
         }
+        if (uiState.binding == null) {
+            Text(
+                modifier = Modifier.testTag("monitor_start_hint"),
+                text = "请先在设备页绑定目标后再开始模拟测试。",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        } else {
+            val activeSession = uiState.activeSession
+            if (activeSession != null &&
+                activeSession.samplingType != SamplingType.SIMULATION &&
+                !uiState.simulationRunning
+            ) {
+                Text(
+                    modifier = Modifier.testTag("monitor_start_hint"),
+                    text = "当前已有采集中 Session（${activeSession.samplingType.label}），请先结束后再开始模拟测试。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
 
         uiState.test?.let { test ->
             TestCard(test = test)
         }
+
+        ChartCard(
+            chartState = chartState,
+            onWindowSelected = viewModel::selectWindow,
+        )
+
+        EventHistoryCard(history = history)
 
         HorizontalDivider()
 
@@ -165,8 +227,12 @@ fun MonitorScreen(
 }
 
 @Composable
-private fun TargetAndScanCard(uiState: LiveMonitorState) {
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+private fun TargetAndScanCard(
+    uiState: LiveMonitorState,
+    status: MonitorStatusView,
+    onOpenDevice: () -> Unit,
+) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth().testTag("monitor_target_card")) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -186,6 +252,12 @@ private fun TargetAndScanCard(uiState: LiveMonitorState) {
                     style = MaterialTheme.typography.bodyLarge,
                 )
             }
+            OutlinedButton(
+                modifier = Modifier.testTag("monitor_open_device"),
+                onClick = onOpenDevice,
+            ) {
+                Text("打开设备页")
+            }
             Text(
                 modifier = Modifier.testTag("monitor_scan_state"),
                 text = "扫描：${scanLabel(uiState.scanState)}",
@@ -195,6 +267,16 @@ private fun TargetAndScanCard(uiState: LiveMonitorState) {
                 modifier = Modifier.testTag("monitor_identity"),
                 text = "身份：${identityLabel(uiState.identityStatus)}" +
                     (uiState.identityDetail?.let { " · $it" } ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                modifier = Modifier.testTag("monitor_status"),
+                text = status.headline,
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                modifier = Modifier.testTag("monitor_status_detail"),
+                text = status.detail,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -209,6 +291,12 @@ private fun TestCard(test: SimulationTestView) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
+                modifier = Modifier.testTag("monitor_simulated_badge"),
+                text = "模拟 · 本地判定，不向车辆发送指令",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
                 modifier = Modifier.testTag("monitor_test_name"),
                 text = "模拟测试：${test.session.name}",
                 style = MaterialTheme.typography.titleMedium,
@@ -217,6 +305,11 @@ private fun TestCard(test: SimulationTestView) {
                 modifier = Modifier.testTag("monitor_test_config"),
                 text = "配置：${test.config.name} · ${test.config.config.algorithm.name} · " +
                     "进入 ${test.config.config.enterThresholdDbm} / 离开 ${test.config.config.exitThresholdDbm} dBm",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                modifier = Modifier.testTag("monitor_test_config_version"),
+                text = "算法版本 ${test.config.algorithmVersion} · 触发规则 ${test.config.triggerRuleVersion}",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
@@ -245,7 +338,8 @@ private fun TestCard(test: SimulationTestView) {
                 text = latest?.let(::formatEvent) ?: "最近事件：尚无",
                 style = MaterialTheme.typography.bodySmall,
             )
-            test.events.takeLast(3).forEach { event ->
+            // 最近一条已在上面展示；这里只补更早的事件，避免同一事件显示两次。
+            test.events.dropLast(1).takeLast(3).forEach { event ->
                 Text(
                     modifier = Modifier.testTag("monitor_event_${event.eventId}"),
                     text = formatEvent(event),
@@ -254,6 +348,116 @@ private fun TestCard(test: SimulationTestView) {
             }
         }
     }
+}
+
+@Composable
+private fun ChartCard(
+    chartState: MonitorChartState,
+    onWindowSelected: (RssiChartWindow) -> Unit,
+) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth().testTag("monitor_chart")) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(text = "曲线与时间窗", style = MaterialTheme.typography.titleMedium)
+            Text(
+                modifier = Modifier.testTag("monitor_chart_mode"),
+                text = when (chartState.mode) {
+                    MonitorChartMode.SIMULATION_TEST -> "曲线来源：模拟测试"
+                    MonitorChartMode.MONITOR -> "曲线来源：普通监控（不产生模拟事件）"
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RssiChartWindow.entries.forEach { window ->
+                    FilterChip(
+                        modifier = Modifier.testTag(windowTestTag(window)),
+                        selected = chartState.window == window,
+                        onClick = { onWindowSelected(window) },
+                        label = { Text(window.label) },
+                    )
+                }
+            }
+            RssiChart(
+                data = chartState.data,
+                testTagPrefix = "monitor_chart",
+            )
+        }
+    }
+}
+
+@Composable
+private fun EventHistoryCard(history: SimulationEventHistory) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth().testTag("monitor_history")) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(text = "模拟事件历史", style = MaterialTheme.typography.titleMedium)
+            if (!history.hasEvents) {
+                Text(
+                    modifier = Modifier.testTag("monitor_history_empty"),
+                    text = if (history.sessionId == null) {
+                        "尚无模拟测试事件。普通监控不会产生模拟事件或通知。"
+                    } else {
+                        "本次模拟测试尚未产生事件。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (history.sessionId != null) {
+                Text(
+                    modifier = Modifier.testTag("monitor_history_target"),
+                    text = "目标：${history.targetLabel ?: "未知"}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    modifier = Modifier.testTag("monitor_history_config"),
+                    text = "配置：${history.configName ?: "未知"}" +
+                        (history.configAlgorithm?.let { " · ${algorithmLabel(it)}" } ?: "") +
+                        " · 算法版本 ${history.algorithmVersion ?: "未知"}" +
+                        " · 触发规则 ${history.triggerRuleVersion ?: "未知"}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    modifier = Modifier.testTag("monitor_history_count"),
+                    text = "事件：${history.entries.size}" +
+                        (history.sessionStatus?.let { " · ${it.label}" } ?: ""),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            history.entries.forEach { entry ->
+                HistoryEntry(entry = entry, targetLabel = history.targetLabel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryEntry(
+    entry: SimulationEventHistoryEntry,
+    targetLabel: String?,
+) {
+    Text(
+        modifier = Modifier.testTag("monitor_history_event_${entry.eventId}"),
+        text = "时间 ${formatMonitorTime(entry.atEpochMillis)} · " +
+            "目标 ${targetLabel ?: entry.targetId}（${entry.targetId}） · " +
+            "原因 ${entry.reason.name} · 原始 ${entry.rawRssiDbm} dBm · " +
+            "滤波 ${"%.1f".format(Locale.ROOT, entry.filteredRssiDbm)} dBm · " +
+            "算法 ${entry.algorithmVersion} · 规则 ${entry.triggerRuleVersion}",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Text(
+        modifier = Modifier.testTag("monitor_history_notification_${entry.eventId}"),
+        text = "通知：${entry.feedbackStatus.label}" +
+            (entry.feedbackDetail?.let { "（$it）" } ?: "") +
+            "（事件事实与通知结果分开记录）",
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 @Composable
@@ -283,7 +487,8 @@ private fun DiagnosticsCard(uiState: LiveMonitorState) {
 private fun formatEvent(event: SessionRunEvent): String {
     val feedback = event.feedbackStatus.label +
         (event.feedbackDetail?.let { "（$it）" } ?: "")
-    return "会话 +${event.atSessionMillis} ms · ${event.type.name} · ${event.reason.name} · " +
+    return "时间 ${formatMonitorTime(event.atEpochMillis)} · 会话 +${event.atSessionMillis} ms · " +
+        "${event.type.name} · ${event.reason.name} · 目标 ${event.targetId} · " +
         "${event.rawRssiDbm} dBm · 滤波 %.1f dBm · 通知：%s".format(
             Locale.ROOT,
             event.filteredRssiDbm,
@@ -296,6 +501,31 @@ private fun sessionRelativeTime(test: SimulationTestView): String = when (test.s
     SessionLifecycleStatus.COMPLETED -> "结束相对：+${test.session.durationMillis} ms"
     SessionLifecycleStatus.INTERRUPTED ->
         "已记录覆盖：+${test.session.durationMillis} ms（中断不计入结束）"
+}
+
+private fun observationIntervalLabel(samples: List<LiveReadingPoint>): String {
+    val interval = observationIntervalMillis(samples)
+    return if (interval == null) {
+        "观测间隔：尚无（少于两条独立观测）"
+    } else {
+        "观测间隔：$interval ms（最近两次独立观测）"
+    }
+}
+
+private fun confirmationLabel(confirmation: ConfirmationRequirement): String = when (confirmation) {
+    is ConfirmationRequirement.ConsecutiveSamples -> "连续 ${confirmation.minimumSamples} 帧"
+    is ConfirmationRequirement.Duration -> "持续 ${confirmation.minimumDurationMillis} ms"
+}
+
+private fun algorithmLabel(algorithm: ProximityAlgorithm): String = when (algorithm) {
+    ProximityAlgorithm.BASELINE -> "Baseline"
+    ProximityAlgorithm.EMA -> "EMA"
+}
+
+private fun windowTestTag(window: RssiChartWindow): String = when (window) {
+    RssiChartWindow.THIRTY_SECONDS -> "monitor_window_30s"
+    RssiChartWindow.ONE_MINUTE -> "monitor_window_60s"
+    RssiChartWindow.FIVE_MINUTES -> "monitor_window_300s"
 }
 
 private fun scanLabel(scanState: ScanAvailability): String = when (scanState) {
@@ -332,6 +562,8 @@ private fun rememberMonitorViewModel(): MonitorViewModel {
         factory = AppViewModelProvider.monitorFactory(
             controller = application.container.liveMonitorController,
             configStore = application.container.algorithmConfigStore,
+            sessionStore = application.container.sessionStore,
+            simulationStore = application.container.simulationRunStore,
         ),
     )
 }

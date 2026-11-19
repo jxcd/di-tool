@@ -7,6 +7,7 @@ import com.byd.proximitylab.algorithmconfig.AlgorithmConfigStore
 import com.byd.proximitylab.live.LiveMonitorController
 import com.byd.proximitylab.session.SessionRecorder
 import com.byd.proximitylab.session.SessionStore
+import com.byd.proximitylab.simulation.SimulationRunStore
 import com.byd.proximitylab.target.TargetMonitor
 import com.byd.proximitylab.target.TargetObservationSource
 import com.byd.proximitylab.ui.device.DeviceViewModel
@@ -27,9 +28,11 @@ object AppViewModelProvider {
     fun monitorFactory(
         controller: LiveMonitorController,
         configStore: AlgorithmConfigStore? = null,
+        sessionStore: SessionStore? = null,
+        simulationStore: SimulationRunStore? = null,
     ): ViewModelProvider.Factory =
         viewModelFactory {
-            initializer { MonitorViewModel(controller, configStore) }
+            initializer { MonitorViewModel(controller, configStore, sessionStore, simulationStore) }
         }
 
     fun deviceFactory(monitor: TargetMonitor): ViewModelProvider.Factory = viewModelFactory {

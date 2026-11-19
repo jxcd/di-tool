@@ -81,7 +81,15 @@ fun ProximityLabApp(modifier: Modifier = Modifier) {
                 .padding(innerPadding),
         ) {
             composable(LabDestination.Device.route) { DeviceScreen() }
-            composable(LabDestination.Monitor.route) { MonitorScreen() }
+            composable(LabDestination.Monitor.route) {
+                MonitorScreen(
+                    onOpenDevice = {
+                        navController.navigate(LabDestination.Device.route) {
+                            launchSingleTop = true
+                        }
+                    },
+                )
+            }
             composable(LabDestination.Sampling.route) { SamplingScreen() }
             composable(LabDestination.Lab.route) { AlgorithmLabScreen() }
         }

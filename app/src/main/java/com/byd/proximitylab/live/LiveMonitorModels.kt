@@ -1,6 +1,7 @@
 package com.byd.proximitylab.live
 
 import com.byd.proximitylab.ble.ScanAvailability
+import com.byd.proximitylab.proximity.ConfirmationRequirement
 import com.byd.proximitylab.proximity.MotionTrend
 import com.byd.proximitylab.proximity.ProximityAlgorithm
 import com.byd.proximitylab.proximity.ProximityState
@@ -44,6 +45,11 @@ data class LiveDecisionView(
     val enterThresholdDbm: Int,
     val exitThresholdDbm: Int,
     val algorithm: ProximityAlgorithm,
+    /** 当前判定使用的配置名称；模拟测试运行中为当次快照名称。 */
+    val configName: String = "",
+    val sampleValidityMillis: Long = 5_000L,
+    val confirmation: ConfirmationRequirement = ConfirmationRequirement.ConsecutiveSamples(2),
+    val emaAlpha: Double = 0.5,
 ) {
     companion object {
         fun initial(config: SessionConfigSnapshot): LiveDecisionView = LiveDecisionView(
@@ -58,6 +64,10 @@ data class LiveDecisionView(
             enterThresholdDbm = config.config.enterThresholdDbm,
             exitThresholdDbm = config.config.exitThresholdDbm,
             algorithm = config.config.algorithm,
+            configName = config.name,
+            sampleValidityMillis = config.config.sampleValidityMillis,
+            confirmation = config.config.confirmation,
+            emaAlpha = config.config.emaAlpha,
         )
 
         val EMPTY: LiveDecisionView = initial(BuiltInSessionConfigs.DEFAULT)
@@ -98,6 +108,8 @@ data class LiveMonitorState(
     val monitorSamples: List<LiveReadingPoint> = emptyList(),
     val test: SimulationTestView? = null,
     val message: String? = null,
+    /** 共享 [com.byd.proximitylab.session.SessionRecorder] 中正在采集的 Session，供未开始测试时提示。 */
+    val activeSession: SamplingSession? = null,
 ) {
     /** 当前应展示的判定：运行中的模拟测试优先，否则是普通监控。 */
     val displayDecision: LiveDecisionView
@@ -105,4 +117,28 @@ data class LiveMonitorState(
 
     val simulationRunning: Boolean
         get() = test?.running == true
+
+    /** 当前应展示的曲线点：运行中的模拟测试优先，否则是普通监控窗口。 */
+    val displaySamples: List<LiveReadingPoint>
+        get() = test?.takeIf { it.running }?.samples ?: monitorSamples
+
+    /**
+     * 当前应展示的最后观测时刻。样本过期或扫描/身份中断后判定会清空最近读数，
+     * 但曲线窗口中的旧点仍可证明最后观测发生在何时。
+     */
+    val displayLastObservationAtEpochMillis: Long?
+        get() = displayDecision.lastObservationAtEpochMillis
+            ?: displaySamples.lastOrNull()?.observedAtEpochMillis
+}
+
+/**
+ * 最近两次独立目标观测的间隔，用于发现丢包或空窗；不足两条时返回 `null`。
+ */
+fun observationIntervalMillis(samples: List<LiveReadingPoint>): Long? {
+    if (samples.size < 2) {
+        return null
+    }
+    val previous = samples[samples.size - 2]
+    val latest = samples[samples.size - 1]
+    return (latest.observedAtEpochMillis - previous.observedAtEpochMillis).coerceAtLeast(0L)
 }

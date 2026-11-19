@@ -556,6 +556,7 @@ class LiveMonitorController(
      * 控制器自己的停止流程会先登记 [stopInProgressSessionId]，避免和这里重复处理。
      */
     private suspend fun handleRecorderSessionChanged(session: SamplingSession?) {
+        _state.update { current -> current.copy(activeSession = session) }
         val active = mutex.withLock {
             val run = testRun ?: return@withLock null
             if (stopInProgressSessionId == run.session.id) {
@@ -808,6 +809,10 @@ class LiveMonitorController(
         enterThresholdDbm = config.config.enterThresholdDbm,
         exitThresholdDbm = config.config.exitThresholdDbm,
         algorithm = config.config.algorithm,
+        configName = config.name,
+        sampleValidityMillis = config.config.sampleValidityMillis,
+        confirmation = config.config.confirmation,
+        emaAlpha = config.config.emaAlpha,
     )
 
     private fun setMessage(message: String) {
