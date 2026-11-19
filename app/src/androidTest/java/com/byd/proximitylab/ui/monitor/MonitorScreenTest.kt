@@ -335,6 +335,7 @@ class MonitorScreenTest {
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
             ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
         ).build()
         val bindingStore = RoomTargetBindingStore(database.targetBindingDao())
         if (persistBinding) {

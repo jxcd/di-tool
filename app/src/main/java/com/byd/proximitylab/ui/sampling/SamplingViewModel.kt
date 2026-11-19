@@ -3,6 +3,12 @@ package com.byd.proximitylab.ui.sampling
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.byd.proximitylab.chart.RssiChartData
+import com.byd.proximitylab.replay.ReplayConfigRequest
+import com.byd.proximitylab.replay.SessionReplayChart
+import com.byd.proximitylab.replay.SessionReplayRecord
+import com.byd.proximitylab.replay.SessionReplayResult
+import com.byd.proximitylab.replay.SessionReplayService
+import com.byd.proximitylab.replay.SessionReplaySummary
 import com.byd.proximitylab.session.FixedSampleLocation
 import com.byd.proximitylab.session.PhonePlacement
 import com.byd.proximitylab.session.ReferenceMarkerKind
@@ -53,9 +59,16 @@ data class SamplingFormState(
 
 /**
  * 已打开 Session 的详情。字段从只读 [SessionDetailSnapshot] 读取，保留 04 的字段名供既有调用方复用。
+ *
+ * 09 的回放历史与当前展示结果单独存放；[replay] 只影响详情展示，不写实时事件历史。
  */
 data class SessionDetailState(
     val snapshot: SessionDetailSnapshot,
+    val replayHistory: List<SessionReplaySummary> = emptyList(),
+    val replay: SessionReplayRecord? = null,
+    val replayChart: RssiChartData? = null,
+    val replayRunning: Boolean = false,
+    val replayMessage: String? = null,
 ) {
     val session: SamplingSession get() = snapshot.session
     val observationCount: Int get() = snapshot.observationCount
@@ -109,6 +122,7 @@ class SamplingViewModel(
     private val observationSource: TargetObservationSource,
     private val markerRecorder: SessionMarkerRecorder,
     private val simulationStore: SimulationRunStore? = null,
+    private val replayService: SessionReplayService? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
@@ -250,6 +264,65 @@ class SamplingViewModel(
 
     fun closeDetail() {
         _uiState.update { state -> state.copy(detail = null) }
+    }
+
+    /**
+     * 从详情使用当次快照发起一次回放。Session 没有当次快照时由 [SessionReplayService] 退回当前生效
+     * 配置并标为新算结果。每次回放使用独立判定上下文，只更新回放结果，不写实时历史或触发反馈。
+     */
+    fun replaySession(sessionId: String) {
+        val service = replayService
+        if (service == null) {
+            setMessage("回放入口不可用。")
+            return
+        }
+        val detail = _uiState.value.detail
+        if (detail?.session?.id != sessionId) {
+            return
+        }
+        if (detail.replayRunning) {
+            return
+        }
+        viewModelScope.launch {
+            updateDetail(sessionId) { current ->
+                current.copy(replayRunning = true, replayMessage = null)
+            }
+            when (val result = service.replay(sessionId, ReplayConfigRequest.OriginalSnapshot)) {
+                is SessionReplayResult.Completed -> {
+                    val record = result.record
+                    val history = service.loadReplays(sessionId).map { replay -> replay.summary() }
+                    updateDetail(sessionId) { current ->
+                        current.copy(
+                            replay = record,
+                            replayChart = SessionReplayChart.build(
+                                session = current.session,
+                                timeline = current.timeline,
+                                record = record,
+                                referenceMarkers = emptyList(),
+                            ),
+                            replayHistory = history,
+                            replayRunning = false,
+                            replayMessage = replayMessageFor(record),
+                        )
+                    }
+                }
+
+                is SessionReplayResult.SessionNotFound -> finishReplayWithMessage(
+                    sessionId,
+                    "Session 不存在或已被删除。",
+                )
+
+                is SessionReplayResult.SessionStillRecording -> finishReplayWithMessage(
+                    sessionId,
+                    "采集中 Session 没有稳定覆盖终点，请先结束采样再回放。",
+                )
+
+                is SessionReplayResult.ConfigurationUnavailable -> finishReplayWithMessage(
+                    sessionId,
+                    result.reason,
+                )
+            }
+        }
     }
 
     fun renameSession(sessionId: String, name: String) {
@@ -401,7 +474,65 @@ class SamplingViewModel(
             runEvents = simulationStore?.loadEvents(sessionId).orEmpty(),
             runStates = simulationStore?.loadStates(sessionId).orEmpty(),
         )
-        _uiState.update { state -> state.copy(detail = SessionDetailState(snapshot)) }
+        val replayRecords = replayService?.loadReplays(sessionId).orEmpty()
+        val latestReplay = replayRecords.firstOrNull()
+        val detail = SessionDetailState(
+            snapshot = snapshot,
+            replayHistory = replayRecords.map { record -> record.summary() },
+            replay = latestReplay,
+            replayChart = latestReplay?.let { record ->
+                SessionReplayChart.build(
+                    session = snapshot.session,
+                    timeline = snapshot.timeline,
+                    record = record,
+                    referenceMarkers = emptyList(),
+                )
+            },
+        )
+        _uiState.update { state -> state.copy(detail = detail) }
+    }
+
+    private fun updateDetail(
+        sessionId: String,
+        transform: (SessionDetailState) -> SessionDetailState,
+    ) {
+        _uiState.update { state ->
+            val detail = state.detail
+            if (detail?.session?.id == sessionId) {
+                state.copy(detail = transform(detail))
+            } else {
+                state
+            }
+        }
+    }
+
+    private fun finishReplayWithMessage(sessionId: String, message: String) {
+        updateDetail(sessionId) { detail ->
+            detail.copy(replayRunning = false, replayMessage = message)
+        }
+    }
+
+    private fun replayMessageFor(record: SessionReplayRecord): String = buildString {
+        append("回放完成：${record.outcome.label}")
+        append("，${record.events.size} 条模拟事件")
+        if (!record.coverage.hasObservations) {
+            append("；Session 没有原始样本")
+        }
+        if (record.coverage.interrupted) {
+            append("；Session 中断，仅重放已记录覆盖")
+        }
+        if (record.coverage.hasEventGaps) {
+            append("；输入缺少 ${record.coverage.droppedEventCount} 条采集事件")
+        }
+        if (record.versions.versionMismatch) {
+            append("；版本差异：")
+            append(
+                record.versions.differences.joinToString("，") { difference ->
+                    "${difference.kind.label} ${difference.recordedValue} → ${difference.executedValue}"
+                },
+            )
+        }
+        append("。回放不写入实时历史，也不触发通知或震动。")
     }
 
     private suspend fun refreshDetailIfOpen(sessionId: String) {

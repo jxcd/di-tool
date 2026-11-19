@@ -290,6 +290,7 @@ class AlgorithmLabScreenTest {
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
             ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
         ).build()
         var now = 1_800_000_000_000L
         val store: AlgorithmConfigStore = RoomAlgorithmConfigStore(

@@ -8,6 +8,9 @@ import com.byd.proximitylab.algorithmconfig.data.RoomAlgorithmConfigStore
 import com.byd.proximitylab.ble.AndroidBleScanSource
 import com.byd.proximitylab.ble.BleScanSource
 import com.byd.proximitylab.data.ProximityLabDatabase
+import com.byd.proximitylab.replay.SessionReplayService
+import com.byd.proximitylab.replay.SessionReplayStore
+import com.byd.proximitylab.replay.data.RoomSessionReplayStore
 import com.byd.proximitylab.session.SessionMarkerRecorder
 import com.byd.proximitylab.session.SessionRecorder
 import com.byd.proximitylab.session.SessionStore
@@ -54,6 +57,7 @@ class AppContainer(
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
             ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
         )
         .build()
 
@@ -82,6 +86,18 @@ class AppContainer(
 
     val simulationRunStore: SimulationRunStore =
         RoomSimulationRunStore(database.simulationRunDao())
+
+    /**
+     * 09 的回放结果存储与入口。回放只写独立表，不依赖实时监控、模拟运行结果或通知/震动。
+     */
+    val sessionReplayStore: SessionReplayStore =
+        RoomSessionReplayStore(database.sessionReplayDao())
+
+    val sessionReplayService: SessionReplayService = SessionReplayService(
+        sessionStore = sessionStore,
+        replayStore = sessionReplayStore,
+        configStore = algorithmConfigStore,
+    )
 
     /**
      * 04/05/08/11 共用的会话控制与追加入口。

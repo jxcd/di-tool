@@ -8,10 +8,20 @@ import com.byd.proximitylab.algorithmconfig.AlgorithmConfigStore
 import com.byd.proximitylab.algorithmconfig.BuiltInAlgorithmConfigs
 import com.byd.proximitylab.algorithmconfig.data.RoomAlgorithmConfigStore
 import com.byd.proximitylab.proximity.ConfirmationRequirement
+import com.byd.proximitylab.proximity.MotionTrend
 import com.byd.proximitylab.proximity.ProximityAlgorithm
 import com.byd.proximitylab.proximity.ProximityConfig
 import com.byd.proximitylab.proximity.ProximityEventReason
 import com.byd.proximitylab.proximity.ProximityEventType
+import com.byd.proximitylab.proximity.ProximityState
+import com.byd.proximitylab.proximity.ProximityStateReason
+import com.byd.proximitylab.replay.ReplayConfigSource
+import com.byd.proximitylab.replay.ReplayInputCoverage
+import com.byd.proximitylab.replay.ReplayOutcome
+import com.byd.proximitylab.replay.ReplayStatePoint
+import com.byd.proximitylab.replay.ReplayVersionInfo
+import com.byd.proximitylab.replay.SessionReplayRecord
+import com.byd.proximitylab.replay.data.RoomSessionReplayStore
 import com.byd.proximitylab.session.FixedSampleLocation
 import com.byd.proximitylab.session.PhonePlacement
 import com.byd.proximitylab.session.ReferenceMarkerKind
@@ -81,6 +91,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
             ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
         ).build()
 
         try {
@@ -124,7 +135,7 @@ class ProximityLabDatabaseMigrationTest {
             assertEquals(session.id, sessionStore.loadSession(session.id)?.id)
             assertEquals(1, sessionStore.loadTimeline(session.id).size)
             assertEquals(
-                5,
+                6,
                 database.openHelper.readableDatabase
                     .query("PRAGMA user_version")
                     .use { cursor ->
@@ -147,6 +158,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
             ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
         ).build()
         try {
             assertEquals(expectedBinding, RoomTargetBindingStore(reopened.targetBindingDao()).loadBinding())
@@ -172,6 +184,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
             ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
         ).build()
 
         try {
@@ -213,7 +226,7 @@ class ProximityLabDatabaseMigrationTest {
             )
             assertEquals(1, runStore.loadEvents(V2_SESSION_ID).size)
             assertEquals(
-                5,
+                6,
                 database.openHelper.readableDatabase
                     .query("PRAGMA user_version")
                     .use { cursor ->
@@ -234,6 +247,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
             ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
         ).build()
         try {
             val sessionStore = RoomSessionStore(reopened.samplingSessionDao())
@@ -261,6 +275,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
             ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
         ).build()
 
         try {
@@ -293,7 +308,7 @@ class ProximityLabDatabaseMigrationTest {
             assertEquals(true, configStore.selectConfig(created.configId))
             assertEquals(created.configId, configStore.loadSelectedConfigId())
             assertEquals(
-                5,
+                6,
                 database.openHelper.readableDatabase
                     .query("PRAGMA user_version")
                     .use { cursor ->
@@ -319,6 +334,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
             ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
         ).build()
 
         try {
@@ -354,7 +370,7 @@ class ProximityLabDatabaseMigrationTest {
                 sessionStore.loadReferenceMarkers(V2_SESSION_ID).map { it.markerId },
             )
             assertEquals(
-                5,
+                6,
                 database.openHelper.readableDatabase
                     .query("PRAGMA user_version")
                     .use { cursor ->
@@ -376,6 +392,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
             ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
         ).build()
         try {
             val sessionStore = RoomSessionStore(reopened.samplingSessionDao())
@@ -385,6 +402,85 @@ class ProximityLabDatabaseMigrationTest {
             assertEquals(
                 SessionEvaluationLabel.EXPECTED_TRIGGER,
                 sessionStore.loadSession(V2_SESSION_ID)?.evaluationLabel,
+            )
+        } finally {
+            reopened.close()
+        }
+    }
+
+    @Test
+    fun version5SessionSnapshotAndMarkersSurviveMigrationAndReplayTablesAreUsable() = runBlocking {
+        createVersion5DatabaseWithSession()
+
+        val database = Room.databaseBuilder(
+            context,
+            ProximityLabDatabase::class.java,
+            databaseName,
+        ).addMigrations(
+            ProximityLabDatabase.MIGRATION_1_2,
+            ProximityLabDatabase.MIGRATION_2_3,
+            ProximityLabDatabase.MIGRATION_3_4,
+            ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
+        ).build()
+
+        val savedRecord: SessionReplayRecord
+        try {
+            val sessionStore = RoomSessionStore(database.samplingSessionDao())
+            val session = requireNotNull(sessionStore.loadSession(V2_SESSION_ID))
+            assertEquals(SessionEvaluationLabel.EXPECTED_TRIGGER, session.evaluationLabel)
+            assertEquals(3, sessionStore.loadTimeline(V2_SESSION_ID).size)
+            val snapshot = requireNotNull(sessionStore.loadConfigSnapshot(V2_SESSION_ID))
+            assertEquals("迁移前用户配置", snapshot.name)
+            assertEquals(
+                listOf("v5-marker"),
+                sessionStore.loadReferenceMarkers(V2_SESSION_ID).map { it.markerId },
+            )
+            assertEquals(
+                6,
+                database.openHelper.readableDatabase
+                    .query("PRAGMA user_version")
+                    .use { cursor ->
+                        cursor.moveToFirst()
+                        cursor.getInt(0)
+                    },
+            )
+
+            val replayStore = RoomSessionReplayStore(database.sessionReplayDao())
+            assertEquals(emptyList<SessionReplayRecord>(), replayStore.loadReplays(V2_SESSION_ID))
+            savedRecord = replayRecord(session = session, snapshot = snapshot)
+            replayStore.saveReplay(savedRecord)
+            assertEquals(savedRecord, replayStore.loadReplay(savedRecord.replayId))
+            assertEquals(
+                listOf(savedRecord.replayId),
+                replayStore.loadReplaySummaries(V2_SESSION_ID).map { it.replayId },
+            )
+        } finally {
+            database.close()
+        }
+
+        // 关闭重开后，v5 已采 Session、快照、标记和 v6 回放记录仍可按版本查询。
+        val reopened = Room.databaseBuilder(
+            context,
+            ProximityLabDatabase::class.java,
+            databaseName,
+        ).addMigrations(
+            ProximityLabDatabase.MIGRATION_1_2,
+            ProximityLabDatabase.MIGRATION_2_3,
+            ProximityLabDatabase.MIGRATION_3_4,
+            ProximityLabDatabase.MIGRATION_4_5,
+            ProximityLabDatabase.MIGRATION_5_6,
+        ).build()
+        try {
+            val sessionStore = RoomSessionStore(reopened.samplingSessionDao())
+            assertEquals(SessionEvaluationLabel.EXPECTED_TRIGGER, sessionStore.loadSession(V2_SESSION_ID)?.evaluationLabel)
+            assertEquals(1, sessionStore.loadReferenceMarkers(V2_SESSION_ID).size)
+            val replayStore = RoomSessionReplayStore(reopened.sessionReplayDao())
+            val loaded = requireNotNull(replayStore.loadReplay(savedRecord.replayId))
+            assertEquals(savedRecord, loaded)
+            assertEquals(
+                savedRecord.versions,
+                replayStore.loadReplaySummaries(V2_SESSION_ID).single().versions,
             )
         } finally {
             reopened.close()
@@ -670,6 +766,106 @@ class ProximityLabDatabaseMigrationTest {
         } finally {
             database.close()
         }
+    }
+
+    private fun createVersion5DatabaseWithSession() {
+        createVersion4DatabaseWithSnapshot()
+        val database = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
+        try {
+            database.execSQL(
+                "ALTER TABLE `sampling_session` ADD COLUMN `evaluationLabel` TEXT NOT NULL " +
+                    "DEFAULT 'UNMARKED'",
+            )
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `session_reference_marker` (
+                    `markerId` TEXT NOT NULL,
+                    `sessionId` TEXT NOT NULL,
+                    `kind` TEXT NOT NULL,
+                    `atEpochMillis` INTEGER NOT NULL,
+                    `note` TEXT,
+                    `createdAtEpochMillis` INTEGER NOT NULL,
+                    PRIMARY KEY(`markerId`),
+                    FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_session_reference_marker_sessionId` " +
+                    "ON `session_reference_marker` (`sessionId`)",
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS " +
+                    "`index_session_reference_marker_sessionId_atEpochMillis` " +
+                    "ON `session_reference_marker` (`sessionId`, `atEpochMillis`)",
+            )
+            database.execSQL(
+                "UPDATE `sampling_session` SET `evaluationLabel` = 'EXPECTED_TRIGGER' WHERE `id` = ?",
+                arrayOf<Any?>(V2_SESSION_ID),
+            )
+            database.execSQL(
+                "INSERT INTO `session_reference_marker` VALUES (?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>(
+                    "v5-marker",
+                    V2_SESSION_ID,
+                    ReferenceMarkerKind.EXPECTED_TRIGGER.name,
+                    STARTED_AT + 1_500L,
+                    null,
+                    STARTED_AT + 1_500L,
+                ),
+            )
+            database.version = 5
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun replayRecord(
+        session: SamplingSession,
+        snapshot: com.byd.proximitylab.session.SessionConfigSnapshot,
+    ): SessionReplayRecord {
+        val state = ReplayStatePoint(
+            atEpochMillis = session.startedAtEpochMillis,
+            atSessionMillis = 0L,
+            state = ProximityState.UNKNOWN,
+            reason = ProximityStateReason.AWAITING_OBSERVATION,
+            trend = MotionTrend.UNKNOWN,
+            lastReadingFrameId = null,
+            lastReadingObservedAtEpochMillis = null,
+            rawRssiDbm = null,
+            filteredRssiDbm = null,
+        )
+        return SessionReplayRecord(
+            replayId = "v5-replay",
+            sessionId = session.id,
+            config = snapshot,
+            configSource = ReplayConfigSource.ORIGINAL_SNAPSHOT,
+            outcome = ReplayOutcome.REPRODUCED,
+            versions = ReplayVersionInfo(
+                originalSnapshotAvailable = true,
+                originalAlgorithmVersion = snapshot.algorithmVersion,
+                originalTriggerRuleVersion = snapshot.triggerRuleVersion,
+                snapshotAlgorithmVersion = snapshot.algorithmVersion,
+                snapshotTriggerRuleVersion = snapshot.triggerRuleVersion,
+                executedAlgorithmVersion = "proximity-algorithms/1",
+                executedTriggerRuleVersion = "confirmed-far-then-near/1",
+            ),
+            coverage = ReplayInputCoverage(
+                startedAtEpochMillis = session.startedAtEpochMillis,
+                coverageEndEpochMillis = session.coverageEndEpochMillis,
+                sessionStatus = session.status,
+                interrupted = false,
+                hasEventGaps = false,
+                droppedEventCount = 0,
+                observationCount = 3,
+            ),
+            samples = emptyList(),
+            states = listOf(state),
+            events = emptyList(),
+            finalState = state,
+            createdAtEpochMillis = session.startedAtEpochMillis + 4_000L,
+        )
     }
 
     private fun createVersion1Database(binding: BoundTarget) {

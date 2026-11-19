@@ -1,0 +1,1500 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 6,
+    "identityHash": "00bd0d0abefa7d94771cac447e2b6b64",
+    "entities": [
+      {
+        "tableName": "bound_target",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`slot` INTEGER NOT NULL, `targetId` TEXT NOT NULL, `displayName` TEXT, `address` TEXT NOT NULL, `boundAtEpochMillis` INTEGER NOT NULL, `verifiedIdentityToken` TEXT, `verifiedIdentityDescription` TEXT, `lastAction` TEXT NOT NULL, `lastActionAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`slot`))",
+        "fields": [
+          {
+            "fieldPath": "slot",
+            "columnName": "slot",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "boundAtEpochMillis",
+            "columnName": "boundAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verifiedIdentityToken",
+            "columnName": "verifiedIdentityToken",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "verifiedIdentityDescription",
+            "columnName": "verifiedIdentityDescription",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastAction",
+            "columnName": "lastAction",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastActionAtEpochMillis",
+            "columnName": "lastActionAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "slot"
+          ]
+        }
+      },
+      {
+        "tableName": "sampling_session",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `targetId` TEXT NOT NULL, `targetDisplayName` TEXT, `targetAddress` TEXT NOT NULL, `samplingType` TEXT NOT NULL, `name` TEXT NOT NULL, `location` TEXT NOT NULL, `estimatedDistanceMeters` REAL, `phonePlacement` TEXT NOT NULL, `status` TEXT NOT NULL, `startedAtEpochMillis` INTEGER NOT NULL, `endedAtEpochMillis` INTEGER, `lastRecordedAtEpochMillis` INTEGER NOT NULL, `interruptedDetectedAtEpochMillis` INTEGER, `evaluationLabel` TEXT NOT NULL DEFAULT 'UNMARKED', PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetDisplayName",
+            "columnName": "targetDisplayName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "targetAddress",
+            "columnName": "targetAddress",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "samplingType",
+            "columnName": "samplingType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "location",
+            "columnName": "location",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estimatedDistanceMeters",
+            "columnName": "estimatedDistanceMeters",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "phonePlacement",
+            "columnName": "phonePlacement",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtEpochMillis",
+            "columnName": "startedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAtEpochMillis",
+            "columnName": "endedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastRecordedAtEpochMillis",
+            "columnName": "lastRecordedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "interruptedDetectedAtEpochMillis",
+            "columnName": "interruptedDetectedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "evaluationLabel",
+            "columnName": "evaluationLabel",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'UNMARKED'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "session_timeline",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sequence` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` TEXT NOT NULL, `kind` TEXT NOT NULL, `processedAtEpochMillis` INTEGER NOT NULL, `observedAtEpochMillis` INTEGER, `receivedAtEpochMillis` INTEGER, `observationId` TEXT, `targetId` TEXT, `rawRssiDbm` INTEGER, `scanFrameId` INTEGER, `deliverySequence` INTEGER, `address` TEXT, `payloadFingerprint` TEXT, `scanAvailable` INTEGER, `scanStateLabel` TEXT, `detail` TEXT, `identityConfirmed` INTEGER, `identityStatusLabel` TEXT, `identityBasisLabel` TEXT, `droppedEvents` INTEGER, FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "sequence",
+            "columnName": "sequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "processedAtEpochMillis",
+            "columnName": "processedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "observedAtEpochMillis",
+            "columnName": "observedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "receivedAtEpochMillis",
+            "columnName": "receivedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "observationId",
+            "columnName": "observationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "rawRssiDbm",
+            "columnName": "rawRssiDbm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "scanFrameId",
+            "columnName": "scanFrameId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "deliverySequence",
+            "columnName": "deliverySequence",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "payloadFingerprint",
+            "columnName": "payloadFingerprint",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "scanAvailable",
+            "columnName": "scanAvailable",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "scanStateLabel",
+            "columnName": "scanStateLabel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "detail",
+            "columnName": "detail",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "identityConfirmed",
+            "columnName": "identityConfirmed",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "identityStatusLabel",
+            "columnName": "identityStatusLabel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "identityBasisLabel",
+            "columnName": "identityBasisLabel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "droppedEvents",
+            "columnName": "droppedEvents",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "sequence"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_session_timeline_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_timeline_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_session_timeline_sessionId_processedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "processedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_timeline_sessionId_processedAtEpochMillis` ON `${TABLE_NAME}` (`sessionId`, `processedAtEpochMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sampling_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "session_config_snapshot",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `snapshotId` TEXT NOT NULL, `name` TEXT NOT NULL, `sourceConfigId` TEXT, `algorithm` TEXT NOT NULL, `enterThresholdDbm` INTEGER NOT NULL, `exitThresholdDbm` INTEGER NOT NULL, `confirmationKind` TEXT NOT NULL, `confirmationValue` INTEGER NOT NULL, `sampleValidityMillis` INTEGER NOT NULL, `emaAlpha` REAL NOT NULL, `algorithmVersion` TEXT NOT NULL, `triggerRuleVersion` TEXT NOT NULL, `schemaVersion` INTEGER NOT NULL, PRIMARY KEY(`sessionId`), FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotId",
+            "columnName": "snapshotId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceConfigId",
+            "columnName": "sourceConfigId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "algorithm",
+            "columnName": "algorithm",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enterThresholdDbm",
+            "columnName": "enterThresholdDbm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exitThresholdDbm",
+            "columnName": "exitThresholdDbm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmationKind",
+            "columnName": "confirmationKind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmationValue",
+            "columnName": "confirmationValue",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sampleValidityMillis",
+            "columnName": "sampleValidityMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "emaAlpha",
+            "columnName": "emaAlpha",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "algorithmVersion",
+            "columnName": "algorithmVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "triggerRuleVersion",
+            "columnName": "triggerRuleVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schemaVersion",
+            "columnName": "schemaVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "sampling_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "session_reference_marker",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`markerId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `kind` TEXT NOT NULL, `atEpochMillis` INTEGER NOT NULL, `note` TEXT, `createdAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`markerId`), FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "markerId",
+            "columnName": "markerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atEpochMillis",
+            "columnName": "atEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "markerId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_session_reference_marker_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_reference_marker_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_session_reference_marker_sessionId_atEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "atEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_reference_marker_sessionId_atEpochMillis` ON `${TABLE_NAME}` (`sessionId`, `atEpochMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sampling_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "session_run_event",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`eventId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `type` TEXT NOT NULL, `reason` TEXT NOT NULL, `atEpochMillis` INTEGER NOT NULL, `atSessionMillis` INTEGER NOT NULL, `targetId` TEXT NOT NULL, `frameId` INTEGER NOT NULL, `observedAtEpochMillis` INTEGER NOT NULL, `rawRssiDbm` INTEGER NOT NULL, `filteredRssiDbm` REAL NOT NULL, `algorithmVersion` TEXT NOT NULL, `triggerRuleVersion` TEXT NOT NULL, `feedbackStatus` TEXT NOT NULL, `feedbackDetail` TEXT, `feedbackUpdatedAtEpochMillis` INTEGER, PRIMARY KEY(`eventId`), FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atEpochMillis",
+            "columnName": "atEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atSessionMillis",
+            "columnName": "atSessionMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frameId",
+            "columnName": "frameId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "observedAtEpochMillis",
+            "columnName": "observedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawRssiDbm",
+            "columnName": "rawRssiDbm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "filteredRssiDbm",
+            "columnName": "filteredRssiDbm",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "algorithmVersion",
+            "columnName": "algorithmVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "triggerRuleVersion",
+            "columnName": "triggerRuleVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "feedbackStatus",
+            "columnName": "feedbackStatus",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "feedbackDetail",
+            "columnName": "feedbackDetail",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "feedbackUpdatedAtEpochMillis",
+            "columnName": "feedbackUpdatedAtEpochMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "eventId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_session_run_event_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_run_event_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_session_run_event_sessionId_atSessionMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "atSessionMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_run_event_sessionId_atSessionMillis` ON `${TABLE_NAME}` (`sessionId`, `atSessionMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sampling_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "session_run_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionId` TEXT NOT NULL, `atEpochMillis` INTEGER NOT NULL, `atSessionMillis` INTEGER NOT NULL, `targetId` TEXT NOT NULL, `state` TEXT NOT NULL, `reason` TEXT NOT NULL, `trend` TEXT NOT NULL, `lastReadingFrameId` INTEGER, `lastReadingObservedAtEpochMillis` INTEGER, `rawRssiDbm` INTEGER, `filteredRssiDbm` REAL, `algorithmVersion` TEXT NOT NULL, `triggerRuleVersion` TEXT NOT NULL, FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atEpochMillis",
+            "columnName": "atEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atSessionMillis",
+            "columnName": "atSessionMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trend",
+            "columnName": "trend",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastReadingFrameId",
+            "columnName": "lastReadingFrameId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastReadingObservedAtEpochMillis",
+            "columnName": "lastReadingObservedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "rawRssiDbm",
+            "columnName": "rawRssiDbm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "filteredRssiDbm",
+            "columnName": "filteredRssiDbm",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "algorithmVersion",
+            "columnName": "algorithmVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "triggerRuleVersion",
+            "columnName": "triggerRuleVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_session_run_state_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_run_state_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_session_run_state_sessionId_atSessionMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "atSessionMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_run_state_sessionId_atSessionMillis` ON `${TABLE_NAME}` (`sessionId`, `atSessionMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sampling_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "algorithm_config",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`configId` TEXT NOT NULL, `name` TEXT NOT NULL, `algorithm` TEXT NOT NULL, `enterThresholdDbm` INTEGER NOT NULL, `exitThresholdDbm` INTEGER NOT NULL, `confirmationKind` TEXT NOT NULL, `confirmationValue` INTEGER NOT NULL, `sampleValidityMillis` INTEGER NOT NULL, `emaAlpha` REAL NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`configId`))",
+        "fields": [
+          {
+            "fieldPath": "configId",
+            "columnName": "configId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "algorithm",
+            "columnName": "algorithm",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enterThresholdDbm",
+            "columnName": "enterThresholdDbm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exitThresholdDbm",
+            "columnName": "exitThresholdDbm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmationKind",
+            "columnName": "confirmationKind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmationValue",
+            "columnName": "confirmationValue",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sampleValidityMillis",
+            "columnName": "sampleValidityMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "emaAlpha",
+            "columnName": "emaAlpha",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "configId"
+          ]
+        }
+      },
+      {
+        "tableName": "algorithm_selection",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`slot` INTEGER NOT NULL, `configId` TEXT NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`slot`))",
+        "fields": [
+          {
+            "fieldPath": "slot",
+            "columnName": "slot",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "configId",
+            "columnName": "configId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "slot"
+          ]
+        }
+      },
+      {
+        "tableName": "session_replay",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`replayId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `configSnapshotId` TEXT NOT NULL, `configName` TEXT NOT NULL, `configSourceConfigId` TEXT, `configSource` TEXT NOT NULL, `algorithm` TEXT NOT NULL, `enterThresholdDbm` INTEGER NOT NULL, `exitThresholdDbm` INTEGER NOT NULL, `confirmationKind` TEXT NOT NULL, `confirmationValue` INTEGER NOT NULL, `sampleValidityMillis` INTEGER NOT NULL, `emaAlpha` REAL NOT NULL, `configSchemaVersion` INTEGER NOT NULL, `originalSnapshotAvailable` INTEGER NOT NULL, `originalAlgorithmVersion` TEXT, `originalTriggerRuleVersion` TEXT, `snapshotAlgorithmVersion` TEXT NOT NULL, `snapshotTriggerRuleVersion` TEXT NOT NULL, `executedAlgorithmVersion` TEXT NOT NULL, `executedTriggerRuleVersion` TEXT NOT NULL, `outcome` TEXT NOT NULL, `startedAtEpochMillis` INTEGER NOT NULL, `coverageEndEpochMillis` INTEGER NOT NULL, `sessionStatus` TEXT NOT NULL, `interrupted` INTEGER NOT NULL, `hasEventGaps` INTEGER NOT NULL, `droppedEventCount` INTEGER NOT NULL, `observationCount` INTEGER NOT NULL, `finalAtEpochMillis` INTEGER NOT NULL, `finalAtSessionMillis` INTEGER NOT NULL, `finalState` TEXT NOT NULL, `finalReason` TEXT NOT NULL, `finalTrend` TEXT NOT NULL, `finalLastReadingFrameId` INTEGER, `finalLastReadingObservedAtEpochMillis` INTEGER, `finalRawRssiDbm` INTEGER, `finalFilteredRssiDbm` REAL, `sampleCount` INTEGER NOT NULL, `stateCount` INTEGER NOT NULL, `eventCount` INTEGER NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `replayFormatVersion` INTEGER NOT NULL, PRIMARY KEY(`replayId`), FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "replayId",
+            "columnName": "replayId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "configSnapshotId",
+            "columnName": "configSnapshotId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "configName",
+            "columnName": "configName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "configSourceConfigId",
+            "columnName": "configSourceConfigId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "configSource",
+            "columnName": "configSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "algorithm",
+            "columnName": "algorithm",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enterThresholdDbm",
+            "columnName": "enterThresholdDbm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exitThresholdDbm",
+            "columnName": "exitThresholdDbm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmationKind",
+            "columnName": "confirmationKind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmationValue",
+            "columnName": "confirmationValue",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sampleValidityMillis",
+            "columnName": "sampleValidityMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "emaAlpha",
+            "columnName": "emaAlpha",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "configSchemaVersion",
+            "columnName": "configSchemaVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalSnapshotAvailable",
+            "columnName": "originalSnapshotAvailable",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalAlgorithmVersion",
+            "columnName": "originalAlgorithmVersion",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "originalTriggerRuleVersion",
+            "columnName": "originalTriggerRuleVersion",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "snapshotAlgorithmVersion",
+            "columnName": "snapshotAlgorithmVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotTriggerRuleVersion",
+            "columnName": "snapshotTriggerRuleVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "executedAlgorithmVersion",
+            "columnName": "executedAlgorithmVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "executedTriggerRuleVersion",
+            "columnName": "executedTriggerRuleVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtEpochMillis",
+            "columnName": "startedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "coverageEndEpochMillis",
+            "columnName": "coverageEndEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionStatus",
+            "columnName": "sessionStatus",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "interrupted",
+            "columnName": "interrupted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hasEventGaps",
+            "columnName": "hasEventGaps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "droppedEventCount",
+            "columnName": "droppedEventCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "observationCount",
+            "columnName": "observationCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finalAtEpochMillis",
+            "columnName": "finalAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finalAtSessionMillis",
+            "columnName": "finalAtSessionMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finalState",
+            "columnName": "finalState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finalReason",
+            "columnName": "finalReason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finalTrend",
+            "columnName": "finalTrend",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finalLastReadingFrameId",
+            "columnName": "finalLastReadingFrameId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "finalLastReadingObservedAtEpochMillis",
+            "columnName": "finalLastReadingObservedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "finalRawRssiDbm",
+            "columnName": "finalRawRssiDbm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "finalFilteredRssiDbm",
+            "columnName": "finalFilteredRssiDbm",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "sampleCount",
+            "columnName": "sampleCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stateCount",
+            "columnName": "stateCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventCount",
+            "columnName": "eventCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "replayFormatVersion",
+            "columnName": "replayFormatVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "replayId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_session_replay_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_replay_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_session_replay_sessionId_createdAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "createdAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_replay_sessionId_createdAtEpochMillis` ON `${TABLE_NAME}` (`sessionId`, `createdAtEpochMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sampling_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "session_replay_sample",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`replayId` TEXT NOT NULL, `sequence` INTEGER NOT NULL, `atEpochMillis` INTEGER NOT NULL, `atSessionMillis` INTEGER NOT NULL, `observedAtEpochMillis` INTEGER NOT NULL, `frameId` INTEGER NOT NULL, `rawRssiDbm` INTEGER NOT NULL, `filteredRssiDbm` REAL NOT NULL, `state` TEXT NOT NULL, `reason` TEXT NOT NULL, `trend` TEXT NOT NULL, PRIMARY KEY(`replayId`, `sequence`), FOREIGN KEY(`replayId`) REFERENCES `session_replay`(`replayId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "replayId",
+            "columnName": "replayId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sequence",
+            "columnName": "sequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atEpochMillis",
+            "columnName": "atEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atSessionMillis",
+            "columnName": "atSessionMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "observedAtEpochMillis",
+            "columnName": "observedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frameId",
+            "columnName": "frameId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawRssiDbm",
+            "columnName": "rawRssiDbm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "filteredRssiDbm",
+            "columnName": "filteredRssiDbm",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trend",
+            "columnName": "trend",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "replayId",
+            "sequence"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_session_replay_sample_replayId",
+            "unique": false,
+            "columnNames": [
+              "replayId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_replay_sample_replayId` ON `${TABLE_NAME}` (`replayId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "session_replay",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "replayId"
+            ],
+            "referencedColumns": [
+              "replayId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "session_replay_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `replayId` TEXT NOT NULL, `atEpochMillis` INTEGER NOT NULL, `atSessionMillis` INTEGER NOT NULL, `state` TEXT NOT NULL, `reason` TEXT NOT NULL, `trend` TEXT NOT NULL, `lastReadingFrameId` INTEGER, `lastReadingObservedAtEpochMillis` INTEGER, `rawRssiDbm` INTEGER, `filteredRssiDbm` REAL, FOREIGN KEY(`replayId`) REFERENCES `session_replay`(`replayId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "replayId",
+            "columnName": "replayId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atEpochMillis",
+            "columnName": "atEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atSessionMillis",
+            "columnName": "atSessionMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trend",
+            "columnName": "trend",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastReadingFrameId",
+            "columnName": "lastReadingFrameId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastReadingObservedAtEpochMillis",
+            "columnName": "lastReadingObservedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "rawRssiDbm",
+            "columnName": "rawRssiDbm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "filteredRssiDbm",
+            "columnName": "filteredRssiDbm",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_session_replay_state_replayId",
+            "unique": false,
+            "columnNames": [
+              "replayId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_replay_state_replayId` ON `${TABLE_NAME}` (`replayId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "session_replay",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "replayId"
+            ],
+            "referencedColumns": [
+              "replayId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "session_replay_event",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `replayId` TEXT NOT NULL, `atEpochMillis` INTEGER NOT NULL, `atSessionMillis` INTEGER NOT NULL, `type` TEXT NOT NULL, `reason` TEXT NOT NULL, `targetId` TEXT NOT NULL, `frameId` INTEGER NOT NULL, `observedAtEpochMillis` INTEGER NOT NULL, `rawRssiDbm` INTEGER NOT NULL, `filteredRssiDbm` REAL NOT NULL, `algorithmVersion` TEXT NOT NULL, `triggerRuleVersion` TEXT NOT NULL, FOREIGN KEY(`replayId`) REFERENCES `session_replay`(`replayId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "replayId",
+            "columnName": "replayId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atEpochMillis",
+            "columnName": "atEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atSessionMillis",
+            "columnName": "atSessionMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frameId",
+            "columnName": "frameId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "observedAtEpochMillis",
+            "columnName": "observedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawRssiDbm",
+            "columnName": "rawRssiDbm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "filteredRssiDbm",
+            "columnName": "filteredRssiDbm",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "algorithmVersion",
+            "columnName": "algorithmVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "triggerRuleVersion",
+            "columnName": "triggerRuleVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_session_replay_event_replayId",
+            "unique": false,
+            "columnNames": [
+              "replayId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_replay_event_replayId` ON `${TABLE_NAME}` (`replayId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "session_replay",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "replayId"
+            ],
+            "referencedColumns": [
+              "replayId"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '00bd0d0abefa7d94771cac447e2b6b64')"
+    ]
+  }
+}

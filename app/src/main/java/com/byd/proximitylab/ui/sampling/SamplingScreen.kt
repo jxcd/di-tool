@@ -36,6 +36,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.byd.proximitylab.ProximityLabApplication
+import com.byd.proximitylab.replay.ReplayVersionInfo
+import com.byd.proximitylab.replay.SessionReplayRecord
+import com.byd.proximitylab.replay.SessionReplaySummary
 import com.byd.proximitylab.session.FixedSampleLocation
 import com.byd.proximitylab.session.PhonePlacement
 import com.byd.proximitylab.session.RssiStatistics
@@ -107,6 +110,7 @@ fun SamplingScreen(
                 onSelectLabel = viewModel::setEvaluationLabel,
                 onDeleteMarker = viewModel::deleteReferenceMarker,
                 onDeleteSession = viewModel::requestDeleteSession,
+                onReplay = viewModel::replaySession,
             )
             return@Column
         }
@@ -529,6 +533,7 @@ private fun SessionDetailCard(
     onSelectLabel: (String, SessionEvaluationLabel) -> Unit,
     onDeleteMarker: (String) -> Unit,
     onDeleteSession: (String) -> Unit,
+    onReplay: (String) -> Unit,
 ) {
     val session = detail.session
     OutlinedCard(
@@ -682,6 +687,13 @@ private fun SessionDetailCard(
 
             HorizontalDivider()
 
+            SessionReplaySection(
+                detail = detail,
+                onReplay = onReplay,
+            )
+
+            HorizontalDivider()
+
             Text(
                 text = "原始时间线",
                 style = MaterialTheme.typography.titleSmall,
@@ -757,6 +769,158 @@ private fun SessionDetailCard(
         }
     }
 }
+
+@Composable
+private fun SessionReplaySection(
+    detail: SessionDetailState,
+    onReplay: (String) -> Unit,
+) {
+    val session = detail.session
+    Text(text = "回放", style = MaterialTheme.typography.titleSmall)
+    Text(
+        text = "使用 Session 已保存的样本、收到顺序、扫描/身份变化和覆盖终点重新运行共享判定。" +
+            "回放只保存回放结果，不写实时事件历史，也不触发通知或震动。",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Button(
+        modifier = Modifier.testTag("sampling_detail_replay_run"),
+        enabled = session.status != SessionLifecycleStatus.RECORDING && !detail.replayRunning,
+        onClick = { onReplay(session.id) },
+    ) {
+        Text(
+            when {
+                detail.replayRunning -> "回放中…"
+                detail.configSnapshot != null -> "用当次快照回放"
+                else -> "用当前配置分析"
+            },
+        )
+    }
+    detail.replayMessage?.let { message ->
+        Text(
+            modifier = Modifier.testTag("sampling_detail_replay_message"),
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+
+    detail.replay?.let { record ->
+        Text(
+            modifier = Modifier.testTag("sampling_detail_replay_summary"),
+            text = replaySummaryText(record),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            modifier = Modifier.testTag("sampling_detail_replay_config"),
+            text = replayConfigText(record),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            modifier = Modifier.testTag("sampling_detail_replay_coverage"),
+            text = replayCoverageText(record),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        detail.replayChart?.let { chart ->
+            RssiChart(
+                data = chart,
+                testTagPrefix = "sampling_detail_replay_chart",
+            )
+        } ?: Text(
+            modifier = Modifier.testTag("sampling_detail_replay_chart_empty"),
+            text = "回放没有可绘制曲线。",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            modifier = Modifier.testTag("sampling_detail_replay_states"),
+            text = "回放状态：" + record.states.joinToString(" · ") { state ->
+                "${formatSessionDuration(state.atSessionMillis)} ${state.state.name}/" +
+                    "${state.reason.name}/${state.trend.name}"
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            modifier = Modifier.testTag("sampling_detail_replay_events"),
+            text = if (record.events.isEmpty()) {
+                "回放事件：0 条。回放不会触发通知或震动。"
+            } else {
+                "回放事件：" + record.events.joinToString(" · ") { event ->
+                    "${formatSessionDuration(event.atSessionMillis)} ${event.type.name}/" +
+                        "${event.reason.name} ${event.rawRssiDbm} dBm"
+                }
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+
+    if (detail.replayHistory.isNotEmpty()) {
+        Text(
+            modifier = Modifier.testTag("sampling_detail_replay_history"),
+            text = "回放历史（按版本独立保存）",
+            style = MaterialTheme.typography.titleSmall,
+        )
+        detail.replayHistory.forEach { summary ->
+            Text(
+                modifier = Modifier.testTag("sampling_replay_history_${summary.replayId}"),
+                text = replayHistoryText(summary),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+private fun replaySummaryText(record: SessionReplayRecord): String = buildString {
+    append("回放结果：${record.outcome.label}")
+    append(" · 配置 ${record.config.name}")
+    append(" · 来源 ${record.configSource.label}")
+    append(" · 事件 ${record.events.size} 条")
+    append(" · 算法 ${record.versions.executedAlgorithmVersion}")
+    append(" · 触发规则 ${record.versions.executedTriggerRuleVersion}")
+    append(" · ")
+    append(versionRelationText(record.versions))
+}
+
+private fun replayConfigText(record: SessionReplayRecord): String = buildString {
+    append("回放参数：${record.config.config.algorithm.name}")
+    append(" · 进入 ${record.config.config.enterThresholdDbm} dBm")
+    append(" · 离开 ${record.config.config.exitThresholdDbm} dBm")
+    append(" · 样本有效期 ${record.config.config.sampleValidityMillis} ms")
+    append(" · 确认 ${record.config.config.confirmation}")
+    append(" · 快照 ${record.config.snapshotId}")
+}
+
+private fun replayCoverageText(record: SessionReplayRecord): String = buildString {
+    append("回放覆盖：0.0 秒 – ${formatSessionDuration(record.coverage.durationMillis)}")
+    append(" · Session 状态 ${record.coverage.sessionStatus.label}")
+    if (record.coverage.interrupted) {
+        append(" · 中断，仅重放已记录范围")
+    }
+    if (record.coverage.hasEventGaps) {
+        append(" · 输入缺口 ${record.coverage.droppedEventCount} 条事件")
+    }
+    if (!record.coverage.hasObservations) {
+        append(" · 没有原始样本")
+    }
+    append(" · 终点 ${record.finalState.state.name}/${record.finalState.reason.name}")
+}
+
+private fun replayHistoryText(summary: SessionReplaySummary): String = buildString {
+    append("${formatSessionDuration(summary.coverage.durationMillis)} · ${summary.outcome.label}")
+    append(" · 配置 ${summary.configName}")
+    append(" · 算法 ${summary.versions.executedAlgorithmVersion}")
+    append(" · 规则 ${summary.versions.executedTriggerRuleVersion}")
+    append(" · 事件 ${summary.eventCount} 条")
+    if (summary.versions.versionMismatch) {
+        append(" · ${versionRelationText(summary.versions)}")
+    }
+}
+
+private fun versionRelationText(versions: ReplayVersionInfo): String =
+    if (versions.versionMismatch) {
+        "版本差异：" + versions.differences.joinToString("；") { difference ->
+            "${difference.kind.label} ${difference.recordedValue} → ${difference.executedValue}"
+        }
+    } else {
+        "版本一致"
+    }
 
 @Composable
 private fun DeleteSessionDialog(
@@ -847,6 +1011,7 @@ private fun rememberSamplingViewModel(): SamplingViewModel {
             observationSource = application.container.targetMonitor,
             markerRecorder = application.container.sessionMarkerRecorder,
             simulationStore = application.container.simulationRunStore,
+            replayService = application.container.sessionReplayService,
         ),
     )
 }

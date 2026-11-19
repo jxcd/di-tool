@@ -7,6 +7,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.byd.proximitylab.algorithmconfig.data.AlgorithmConfigDao
 import com.byd.proximitylab.algorithmconfig.data.AlgorithmConfigEntity
 import com.byd.proximitylab.algorithmconfig.data.AlgorithmSelectionEntity
+import com.byd.proximitylab.replay.data.SessionReplayDao
+import com.byd.proximitylab.replay.data.SessionReplayEntity
+import com.byd.proximitylab.replay.data.SessionReplayEventEntity
+import com.byd.proximitylab.replay.data.SessionReplaySampleEntity
+import com.byd.proximitylab.replay.data.SessionReplayStateEntity
 import com.byd.proximitylab.session.data.SamplingSessionDao
 import com.byd.proximitylab.session.data.SamplingSessionEntity
 import com.byd.proximitylab.session.data.SessionConfigSnapshotEntity
@@ -23,8 +28,9 @@ import com.byd.proximitylab.target.data.TargetBindingDao
  *
  * 02 在这里落地绑定目标表；04 提升到版本 2 并增量添加采样 Session 与时间线表；05 提升到版本 3，
  * 增加模拟测试配置快照、事件和状态结果；06 提升到版本 4，增加用户算法配置和当前选择；08 提升到
- * 版本 5，增加整次试验人工标签和人工参考标记表。迁移保留已有绑定、已采数据和已保存的配置快照，
- * 后续切片不要新建第二个 Room 数据库，也不能用 destructive fallback 丢弃历史记录。
+ * 版本 5，增加整次试验人工标签和人工参考标记表；09 提升到版本 6，增加独立保存的回放结果。
+ * 迁移保留已有绑定、已采数据、已保存的配置快照和回放记录，后续切片不要新建第二个 Room 数据库，
+ * 也不能用 destructive fallback 丢弃历史记录。
  */
 @Database(
     entities = [
@@ -37,8 +43,12 @@ import com.byd.proximitylab.target.data.TargetBindingDao
         SessionRunStateEntity::class,
         AlgorithmConfigEntity::class,
         AlgorithmSelectionEntity::class,
+        SessionReplayEntity::class,
+        SessionReplaySampleEntity::class,
+        SessionReplayStateEntity::class,
+        SessionReplayEventEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class ProximityLabDatabase : RoomDatabase() {
@@ -49,6 +59,8 @@ abstract class ProximityLabDatabase : RoomDatabase() {
     abstract fun simulationRunDao(): SimulationRunDao
 
     abstract fun algorithmConfigDao(): AlgorithmConfigDao
+
+    abstract fun sessionReplayDao(): SessionReplayDao
 
     companion object {
         const val NAME: String = "proximity-lab.db"
@@ -287,6 +299,151 @@ abstract class ProximityLabDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS " +
                         "`index_session_reference_marker_sessionId_atEpochMillis` " +
                         "ON `session_reference_marker` (`sessionId`, `atEpochMillis`)",
+                )
+            }
+        }
+
+        /**
+         * 08 → 09：保留全部已有 Session、时间线、配置快照、标记、用户配置和实时运行结果，
+         * 新增独立于实时历史的回放结果表。
+         *
+         * 回放记录完整复制配置参数与版本，并在 Session 删除时级联清理；不修改
+         * `session_run_event`、`session_run_state` 或 `session_config_snapshot`。
+         */
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `session_replay` (
+                        `replayId` TEXT NOT NULL,
+                        `sessionId` TEXT NOT NULL,
+                        `configSnapshotId` TEXT NOT NULL,
+                        `configName` TEXT NOT NULL,
+                        `configSourceConfigId` TEXT,
+                        `configSource` TEXT NOT NULL,
+                        `algorithm` TEXT NOT NULL,
+                        `enterThresholdDbm` INTEGER NOT NULL,
+                        `exitThresholdDbm` INTEGER NOT NULL,
+                        `confirmationKind` TEXT NOT NULL,
+                        `confirmationValue` INTEGER NOT NULL,
+                        `sampleValidityMillis` INTEGER NOT NULL,
+                        `emaAlpha` REAL NOT NULL,
+                        `configSchemaVersion` INTEGER NOT NULL,
+                        `originalSnapshotAvailable` INTEGER NOT NULL,
+                        `originalAlgorithmVersion` TEXT,
+                        `originalTriggerRuleVersion` TEXT,
+                        `snapshotAlgorithmVersion` TEXT NOT NULL,
+                        `snapshotTriggerRuleVersion` TEXT NOT NULL,
+                        `executedAlgorithmVersion` TEXT NOT NULL,
+                        `executedTriggerRuleVersion` TEXT NOT NULL,
+                        `outcome` TEXT NOT NULL,
+                        `startedAtEpochMillis` INTEGER NOT NULL,
+                        `coverageEndEpochMillis` INTEGER NOT NULL,
+                        `sessionStatus` TEXT NOT NULL,
+                        `interrupted` INTEGER NOT NULL,
+                        `hasEventGaps` INTEGER NOT NULL,
+                        `droppedEventCount` INTEGER NOT NULL,
+                        `observationCount` INTEGER NOT NULL,
+                        `finalAtEpochMillis` INTEGER NOT NULL,
+                        `finalAtSessionMillis` INTEGER NOT NULL,
+                        `finalState` TEXT NOT NULL,
+                        `finalReason` TEXT NOT NULL,
+                        `finalTrend` TEXT NOT NULL,
+                        `finalLastReadingFrameId` INTEGER,
+                        `finalLastReadingObservedAtEpochMillis` INTEGER,
+                        `finalRawRssiDbm` INTEGER,
+                        `finalFilteredRssiDbm` REAL,
+                        `sampleCount` INTEGER NOT NULL,
+                        `stateCount` INTEGER NOT NULL,
+                        `eventCount` INTEGER NOT NULL,
+                        `createdAtEpochMillis` INTEGER NOT NULL,
+                        `replayFormatVersion` INTEGER NOT NULL,
+                        PRIMARY KEY(`replayId`),
+                        FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_session_replay_sessionId` " +
+                        "ON `session_replay` (`sessionId`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS " +
+                        "`index_session_replay_sessionId_createdAtEpochMillis` " +
+                        "ON `session_replay` (`sessionId`, `createdAtEpochMillis`)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `session_replay_sample` (
+                        `replayId` TEXT NOT NULL,
+                        `sequence` INTEGER NOT NULL,
+                        `atEpochMillis` INTEGER NOT NULL,
+                        `atSessionMillis` INTEGER NOT NULL,
+                        `observedAtEpochMillis` INTEGER NOT NULL,
+                        `frameId` INTEGER NOT NULL,
+                        `rawRssiDbm` INTEGER NOT NULL,
+                        `filteredRssiDbm` REAL NOT NULL,
+                        `state` TEXT NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `trend` TEXT NOT NULL,
+                        PRIMARY KEY(`replayId`, `sequence`),
+                        FOREIGN KEY(`replayId`) REFERENCES `session_replay`(`replayId`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_session_replay_sample_replayId` " +
+                        "ON `session_replay_sample` (`replayId`)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `session_replay_state` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `replayId` TEXT NOT NULL,
+                        `atEpochMillis` INTEGER NOT NULL,
+                        `atSessionMillis` INTEGER NOT NULL,
+                        `state` TEXT NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `trend` TEXT NOT NULL,
+                        `lastReadingFrameId` INTEGER,
+                        `lastReadingObservedAtEpochMillis` INTEGER,
+                        `rawRssiDbm` INTEGER,
+                        `filteredRssiDbm` REAL,
+                        FOREIGN KEY(`replayId`) REFERENCES `session_replay`(`replayId`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_session_replay_state_replayId` " +
+                        "ON `session_replay_state` (`replayId`)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `session_replay_event` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `replayId` TEXT NOT NULL,
+                        `atEpochMillis` INTEGER NOT NULL,
+                        `atSessionMillis` INTEGER NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `targetId` TEXT NOT NULL,
+                        `frameId` INTEGER NOT NULL,
+                        `observedAtEpochMillis` INTEGER NOT NULL,
+                        `rawRssiDbm` INTEGER NOT NULL,
+                        `filteredRssiDbm` REAL NOT NULL,
+                        `algorithmVersion` TEXT NOT NULL,
+                        `triggerRuleVersion` TEXT NOT NULL,
+                        FOREIGN KEY(`replayId`) REFERENCES `session_replay`(`replayId`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_session_replay_event_replayId` " +
+                        "ON `session_replay_event` (`replayId`)",
                 )
             }
         }

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.byd.proximitylab.algorithmconfig.AlgorithmConfigStore
 import com.byd.proximitylab.live.LiveMonitorController
+import com.byd.proximitylab.replay.SessionReplayService
 import com.byd.proximitylab.session.SessionMarkerRecorder
 import com.byd.proximitylab.session.SessionRecorder
 import com.byd.proximitylab.session.SessionStore
@@ -55,6 +56,7 @@ object AppViewModelProvider {
         observationSource: TargetObservationSource,
         markerRecorder: SessionMarkerRecorder,
         simulationStore: SimulationRunStore? = null,
+        replayService: SessionReplayService? = null,
     ): ViewModelProvider.Factory = viewModelFactory {
         initializer {
             SamplingViewModel(
@@ -63,6 +65,7 @@ object AppViewModelProvider {
                 observationSource = observationSource,
                 markerRecorder = markerRecorder,
                 simulationStore = simulationStore,
+                replayService = replayService,
             )
         }
     }
