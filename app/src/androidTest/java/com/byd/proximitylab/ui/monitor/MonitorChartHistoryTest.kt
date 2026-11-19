@@ -1,5 +1,6 @@
 package com.byd.proximitylab.ui.monitor
 
+import android.Manifest
 import android.content.Context
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
@@ -38,6 +39,7 @@ import com.byd.proximitylab.simulation.SimulatedEventFeedbackStatus
 import com.byd.proximitylab.simulation.data.RoomSimulationRunStore
 import com.byd.proximitylab.target.TargetMonitor
 import com.byd.proximitylab.target.data.RoomTargetBindingStore
+import com.byd.proximitylab.testing.AndroidTestPermissions
 import com.byd.proximitylab.testing.ControllableBleScanSource
 import com.byd.proximitylab.testing.testAdvertisement
 import com.byd.proximitylab.testing.testBinding
@@ -84,6 +86,8 @@ class MonitorChartHistoryTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        // 11 起开始测试会按需申请通知权限；测试前置授予，避免系统对话框遮挡页面。
+        AndroidTestPermissions.grant(context, Manifest.permission.POST_NOTIFICATIONS)
         databaseName = "monitor-chart-history-${UUID.randomUUID()}.db"
     }
 

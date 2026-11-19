@@ -6,14 +6,23 @@ import androidx.room.Room
 import com.byd.proximitylab.algorithmconfig.AlgorithmConfigStore
 import com.byd.proximitylab.algorithmconfig.data.RoomAlgorithmConfigStore
 import com.byd.proximitylab.ble.AndroidBleScanSource
+import com.byd.proximitylab.ble.AndroidScanPermissionChecker
 import com.byd.proximitylab.ble.BleScanSource
+import com.byd.proximitylab.ble.ScanPermissionChecker
 import com.byd.proximitylab.comparison.SessionComparisonService
 import com.byd.proximitylab.data.ProximityLabDatabase
+import com.byd.proximitylab.feedback.AndroidForegroundSessionLauncher
+import com.byd.proximitylab.feedback.AndroidSimulationAlarm
+import com.byd.proximitylab.feedback.ForegroundSessionCoordinator
+import com.byd.proximitylab.feedback.ForegroundSessionLauncher
+import com.byd.proximitylab.feedback.SimulationAlarm
+import com.byd.proximitylab.feedback.SimulationFeedbackCoordinator
 import com.byd.proximitylab.replay.SessionReplayService
 import com.byd.proximitylab.replay.SessionReplayStore
 import com.byd.proximitylab.replay.data.RoomSessionReplayStore
 import com.byd.proximitylab.session.SessionMarkerRecorder
 import com.byd.proximitylab.session.SessionRecorder
+import com.byd.proximitylab.session.SessionScanWatchdog
 import com.byd.proximitylab.session.SessionStore
 import com.byd.proximitylab.session.data.RoomSessionStore
 import com.byd.proximitylab.simulation.SimulationRunStore
@@ -32,7 +41,16 @@ import kotlinx.coroutines.launch
 
 class ProximityLabApplication : Application() {
 
-    val container: AppContainer by lazy { AppContainer(this) }
+    /**
+     * 生产容器使用 Android 权限与前台服务/通知实现。测试可以显式传入受控替身，
+     * 只在 Android 平台边界替代系统调用。
+     */
+    val container: AppContainer by lazy {
+        AppContainer(
+            context = this,
+            scanPermissionChecker = AndroidScanPermissionChecker(this),
+        )
+    }
 }
 
 /**
@@ -44,6 +62,10 @@ class AppContainer(
     context: Context,
     databaseName: String = ProximityLabDatabase.NAME,
     scanSource: BleScanSource = AndroidBleScanSource(context.applicationContext),
+    scanPermissionChecker: ScanPermissionChecker = AndroidScanPermissionChecker(context.applicationContext),
+    foregroundSessionLauncher: ForegroundSessionLauncher =
+        AndroidForegroundSessionLauncher(context.applicationContext),
+    val simulationAlarm: SimulationAlarm = AndroidSimulationAlarm(context.applicationContext),
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -111,11 +133,14 @@ class AppContainer(
 
     /**
      * 04/05/08/11 共用的会话控制与追加入口。
+     *
+     * 11：开始前检查 `BLUETOOTH_SCAN`，未授予时不会创建 Session，也就不会启动前台服务。
      */
     val sessionRecorder: SessionRecorder = SessionRecorder(
         store = sessionStore,
         observationSource = targetMonitor,
         scope = scope,
+        scanPermissionChecker = scanPermissionChecker,
     )
 
     /**
@@ -134,17 +159,58 @@ class AppContainer(
         scope = scope,
     )
 
+    /**
+     * 11：活动 Session 与 `connectedDevice` 前台服务的唯一接合点。启动失败只记录状态，不结束 Session。
+     */
+    val foregroundSessionCoordinator: ForegroundSessionCoordinator = ForegroundSessionCoordinator(
+        activeSession = sessionRecorder.activeSession,
+        launcher = foregroundSessionLauncher,
+        scope = scope,
+    )
+
+    /**
+     * 11：消费已经持久化的模拟事件并提交本地通知/震动。反馈写回同时更新 Room 与实时界面。
+     */
+    val simulationFeedbackCoordinator: SimulationFeedbackCoordinator = SimulationFeedbackCoordinator(
+        store = simulationRunStore,
+        alarm = simulationAlarm,
+        scope = scope,
+        feedbackWriter = { eventId, status, detail ->
+            liveMonitorController.updateEventFeedback(eventId, status, detail)
+        },
+    )
+
+    /**
+     * 11：会话期间周期复查扫描权限，把运行中撤销转为可观察的扫描状态变化。
+     */
+    val scanWatchdog: SessionScanWatchdog = SessionScanWatchdog(
+        activeSession = sessionRecorder.activeSession,
+        revalidate = targetMonitor::revalidateScanAvailability,
+        scope = scope,
+        resume = targetMonitor::resumeScanIfReady,
+    )
+
     init {
         // 进程启动时把上次异常终止遗留的采集中 Session 标为中断，只保留已写入的覆盖终点。
         scope.launch {
             sessionRecorder.recoverInterruptedSessions()
         }
+        // 运行中的模拟测试出现/结束时跟随其 Session；重开 App 不会补发旧事件。
+        scope.launch {
+            liveMonitorController.state.collect { state ->
+                simulationFeedbackCoordinator.follow(
+                    state.test?.takeIf { test -> test.running }?.session?.id,
+                )
+            }
+        }
+        scanWatchdog.start()
     }
 
     /**
      * 释放数据库与协程作用域。生产进程不调用；测试用独立容器验证接线后释放资源。
      */
     fun close() {
+        scanWatchdog.stop()
         scope.cancel()
         database.close()
     }

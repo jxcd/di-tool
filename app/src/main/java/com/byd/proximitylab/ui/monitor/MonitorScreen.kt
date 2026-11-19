@@ -1,5 +1,10 @@
 package com.byd.proximitylab.ui.monitor
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,11 +27,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.byd.proximitylab.ProximityLabApplication
 import com.byd.proximitylab.ble.ScanAvailability
 import com.byd.proximitylab.chart.RssiChartWindow
+import com.byd.proximitylab.feedback.ForegroundSessionStatus
+import com.byd.proximitylab.feedback.SimulationAlertCapabilities
 import com.byd.proximitylab.live.LiveMonitorState
 import com.byd.proximitylab.live.LiveReadingPoint
 import com.byd.proximitylab.live.SimulationTestView
@@ -62,8 +71,29 @@ fun MonitorScreen(
     val chartState by viewModel.chartState.collectAsStateWithLifecycle()
     val history by viewModel.eventHistory.collectAsStateWithLifecycle()
     val markerMessage by viewModel.markerMessage.collectAsStateWithLifecycle()
+    val alertCapabilities by viewModel.alertCapabilities.collectAsStateWithLifecycle()
+    val foregroundStatus by viewModel.foregroundStatus.collectAsStateWithLifecycle()
     val displayed = uiState.displayDecision
     val status = MonitorStatusFormatter.describe(uiState)
+
+    val context = LocalContext.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) {
+        // 拒绝也不影响已经开始/继续的测试；这里只刷新可观察的权限状态。
+        viewModel.refreshAlertCapabilities()
+    }
+    val requestNotificationPermission = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.refreshAlertCapabilities()
+    }
 
     Column(
         modifier = modifier
@@ -90,6 +120,12 @@ fun MonitorScreen(
             uiState = uiState,
             status = status,
             onOpenDevice = onOpenDevice,
+        )
+
+        AlertStatusCard(
+            foregroundStatus = foregroundStatus,
+            capabilities = alertCapabilities,
+            onRequestNotificationPermission = requestNotificationPermission,
         )
 
         OutlinedCard(modifier = Modifier.fillMaxWidth().testTag("monitor_decision")) {
@@ -178,7 +214,11 @@ fun MonitorScreen(
             Button(
                 modifier = Modifier.weight(1f).testTag("monitor_start_test"),
                 enabled = uiState.binding != null && !uiState.simulationRunning,
-                onClick = viewModel::startSimulation,
+                onClick = {
+                    // Android 13+ 单独申请通知权限；拒绝后测试仍会开始并记录事件。
+                    requestNotificationPermission()
+                    viewModel.startSimulation()
+                },
             ) {
                 Text("开始模拟测试")
             }
@@ -238,6 +278,46 @@ fun MonitorScreen(
         HorizontalDivider()
 
         DiagnosticsCard(uiState = uiState)
+    }
+}
+
+@Composable
+private fun AlertStatusCard(
+    foregroundStatus: ForegroundSessionStatus,
+    capabilities: SimulationAlertCapabilities?,
+    onRequestNotificationPermission: () -> Unit,
+) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth().testTag("monitor_alert_card")) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(text = "运行条件与反馈", style = MaterialTheme.typography.titleMedium)
+            Text(
+                modifier = Modifier.testTag("monitor_foreground_status"),
+                text = foregroundStatusText(foregroundStatus),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                modifier = Modifier.testTag("monitor_notification_status"),
+                text = notificationStatusText(capabilities),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                modifier = Modifier.testTag("monitor_lock_screen_limit"),
+                text = "锁屏限制：使用标准系统 BLE 扫描（未按品牌过滤，通用目标同样适用）；" +
+                    "锁屏收包与通知是否实际呈现需由 13/14 现场确认。通知不可用不会删除事件或阻止开始采样。",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (capabilities?.needsNotificationPermissionRequest == true) {
+                OutlinedButton(
+                    modifier = Modifier.testTag("monitor_request_notifications"),
+                    onClick = onRequestNotificationPermission,
+                ) {
+                    Text("申请通知权限")
+                }
+            }
+        }
     }
 }
 
@@ -561,6 +641,32 @@ private fun identityLabel(status: IdentityStatus): String = when (status) {
     IdentityStatus.UNCERTAIN -> "不确定"
 }
 
+private fun foregroundStatusText(status: ForegroundSessionStatus): String = when {
+    status.running ->
+        "前台服务：运行中（connectedDevice，Session ${status.sessionId ?: "未知"}）"
+
+    status.failureReason != null ->
+        "前台服务：启动失败 · ${status.failureReason}（Session 仍按平台实际能力记录）"
+
+    else -> "前台服务：未运行（开始采样或模拟测试后自动启动）"
+}
+
+private fun notificationStatusText(capabilities: SimulationAlertCapabilities?): String {
+    if (capabilities == null) {
+        return "通知权限：未知（未接入 Android 平台状态）。"
+    }
+    return when {
+        capabilities.needsNotificationPermissionRequest ->
+            "通知权限：未授予（Android 13+ 需单独申请）；事件仍会记录，只影响锁屏通知。"
+
+        !capabilities.notificationsEnabled ->
+            "通知：App 通知或通知渠道已关闭；事件仍会记录，只影响通知呈现。"
+
+        else -> "通知权限：已授予，通知渠道可用。" +
+            if (capabilities.vibrationAvailable) " 震动可用。" else " 设备无可用震动。"
+    }
+}
+
 private val monitorTimeFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT)
 
@@ -580,6 +686,8 @@ private fun rememberMonitorViewModel(): MonitorViewModel {
             sessionStore = application.container.sessionStore,
             simulationStore = application.container.simulationRunStore,
             markerRecorder = application.container.sessionMarkerRecorder,
+            simulationAlarm = application.container.simulationAlarm,
+            foregroundCoordinator = application.container.foregroundSessionCoordinator,
         ),
     )
 }

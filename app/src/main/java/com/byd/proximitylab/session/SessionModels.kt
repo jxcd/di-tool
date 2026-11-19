@@ -220,6 +220,11 @@ sealed interface SessionStartResult {
     data class Started(val session: SamplingSession) : SessionStartResult
 
     data class AlreadyRecording(val session: SamplingSession) : SessionStartResult
+
+    /**
+     * 11：缺少 `BLUETOOTH_SCAN`，未创建 Session、未启动扫描或前台服务。
+     */
+    data object ScanPermissionMissing : SessionStartResult
 }
 
 sealed interface SessionStopResult {

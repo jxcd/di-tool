@@ -217,6 +217,15 @@ class LiveMonitorController(
                     reason = "已有采集中 Session，不能同时开始模拟测试。",
                 )
             }
+
+            SessionStartResult.ScanPermissionMissing -> {
+                mutex.withLock {
+                    startInProgress = false
+                    pendingRecordedEvents.clear()
+                }
+                setMessage("缺少 BLUETOOTH_SCAN 扫描权限，未开始模拟测试，也未启动前台服务。")
+                SimulationStartResult.ScanPermissionMissing
+            }
         }
     }
 

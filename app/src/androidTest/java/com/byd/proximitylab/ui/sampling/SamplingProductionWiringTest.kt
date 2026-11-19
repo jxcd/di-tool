@@ -1,5 +1,6 @@
 package com.byd.proximitylab.ui.sampling
 
+import android.Manifest
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
@@ -14,8 +15,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.byd.proximitylab.AppContainer
 import com.byd.proximitylab.MainActivity
 import com.byd.proximitylab.ProximityLabApplication
+import com.byd.proximitylab.feedback.ProximityLabForegroundService
 import com.byd.proximitylab.session.SamplingSession
 import com.byd.proximitylab.session.SessionLifecycleStatus
+import com.byd.proximitylab.testing.AndroidTestPermissions
 import com.byd.proximitylab.testing.testBinding
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -43,12 +46,14 @@ class SamplingProductionWiringTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        AndroidTestPermissions.grant(context, Manifest.permission.BLUETOOTH_SCAN)
         container = (context.applicationContext as ProximityLabApplication).container
     }
 
     @After
     fun tearDown() {
         // 生产容器由 Application 持有，测试结束时只清理本次插入的绑定，避免影响其他用例。
+        ProximityLabForegroundService.stop(context)
         runBlocking { container.bindingStore.clearBinding() }
     }
 
@@ -77,10 +82,17 @@ class SamplingProductionWiringTest {
             findSessionByName(sessionName)?.status == SessionLifecycleStatus.RECORDING
         }
         composeRule.onNodeWithTag("sampling_active").assertIsDisplayed()
+        val active = requireNotNull(findSessionByName(sessionName))
+        composeRule.waitUntil(TIMEOUT_MILLIS) {
+            ProximityLabForegroundService.runningSessionId.value == active.id
+        }
 
         composeRule.onNodeWithTag("sampling_stop").performScrollTo().performClick()
         composeRule.waitUntil(TIMEOUT_MILLIS) {
             findSessionByName(sessionName)?.status == SessionLifecycleStatus.COMPLETED
+        }
+        composeRule.waitUntil(TIMEOUT_MILLIS) {
+            ProximityLabForegroundService.runningSessionId.value == null
         }
 
         val completed = requireNotNull(findSessionByName(sessionName))

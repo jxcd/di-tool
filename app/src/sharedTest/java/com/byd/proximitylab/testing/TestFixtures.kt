@@ -37,6 +37,18 @@ class ControllableBleScanSource : BleScanSource {
 
     var startResult: ScanAvailability = ScanAvailability.Scanning
 
+    /** 11 的会话看门狗调用；为 null 时保持当前扫描状态，模拟无权撤销之外的普通检查。 */
+    var revalidateResult: ScanAvailability? = null
+
+    var revalidateCount: Int = 0
+        private set
+
+    /** 11 的恢复入口：非 null 时把扫描状态改为该值，模拟平台条件恢复。 */
+    var resumeResult: ScanAvailability? = null
+
+    var resumeCount: Int = 0
+        private set
+
     override fun start() {
         startCount += 1
         _scanState.value = startResult
@@ -45,6 +57,16 @@ class ControllableBleScanSource : BleScanSource {
     override fun stop() {
         stopCount += 1
         _scanState.value = ScanAvailability.Stopped
+    }
+
+    override fun revalidate() {
+        revalidateCount += 1
+        revalidateResult?.let { state -> _scanState.value = state }
+    }
+
+    override fun resumeIfReady() {
+        resumeCount += 1
+        resumeResult?.let { state -> _scanState.value = state }
     }
 
     fun setScanState(state: ScanAvailability) {

@@ -212,6 +212,11 @@ class SamplingViewModel(
             when (val result = recorder.start(request)) {
                 is SessionStartResult.Started -> setMessage("已开始采集，扫描由当前 Session 控制。")
                 is SessionStartResult.AlreadyRecording -> setMessage("已有采集中 Session，请先停止。")
+                SessionStartResult.ScanPermissionMissing ->
+                    setMessage(
+                        "缺少 BLUETOOTH_SCAN 扫描权限，未开始采集，也未启动前台服务。" +
+                            "请先在设备页授予扫描权限。",
+                    )
             }
         }
     }

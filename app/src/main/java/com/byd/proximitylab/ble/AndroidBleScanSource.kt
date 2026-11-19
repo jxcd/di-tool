@@ -158,6 +158,46 @@ class AndroidBleScanSource(
         }
     }
 
+    /**
+     * 显式复查权限。Android 在扫描运行中撤销 `BLUETOOTH_SCAN` 后可能不再回调结果，
+     * 会话看门狗借此把撤销转为可观察的扫描状态。
+     */
+    override fun revalidate() {
+        if (!scanRequested.get() || hasScanPermission()) {
+            return
+        }
+        if (!scanRequested.compareAndSet(true, false)) {
+            return
+        }
+        permissionWasGranted = false
+        stopScannerInternal()
+        unregisterAdapterReceiver()
+        _scanState.value = ScanAvailability.PermissionMissing(revoked = true)
+    }
+
+    /**
+     * 平台条件恢复后在同一 Session 内重新提交扫描。只在以下可恢复状态自动重启：
+     * 蓝牙重新开启（来源把 `BluetoothOff` 转为 `Idle`）、权限重新授予、或扫描退回到初始状态。
+     * 用户主动停止（`Stopped`）与失败状态保持原样，避免覆盖用户操作。
+     */
+    override fun resumeIfReady() {
+        if (scanRequested.get()) {
+            return
+        }
+        when (_scanState.value) {
+            ScanAvailability.Idle,
+            ScanAvailability.BluetoothOff,
+            -> start()
+
+            // 权限仍缺失时不调用 start()，避免把 revoked 状态改成普通缺失；授权后下一轮再恢复。
+            is ScanAvailability.PermissionMissing -> if (hasScanPermission()) {
+                start()
+            }
+
+            else -> Unit
+        }
+    }
+
     override fun close() {
         stop()
     }

@@ -1,6 +1,7 @@
 package com.byd.proximitylab.session
 
 import com.byd.proximitylab.ble.ScanAvailability
+import com.byd.proximitylab.ble.ScanPermissionChecker
 import com.byd.proximitylab.target.TargetEvent
 import com.byd.proximitylab.target.TargetIdentityReport
 import com.byd.proximitylab.target.TargetObservationSource
@@ -32,6 +33,11 @@ class SessionRecorder(
     private val scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
+    /**
+     * 11 在创建 Session 和启动前台服务前检查 `BLUETOOTH_SCAN`。测试夹具默认视为已授予；
+     * 生产接线使用 Android 权限实现。
+     */
+    private val scanPermissionChecker: ScanPermissionChecker = ScanPermissionChecker.ALWAYS_GRANTED,
 ) {
 
     private val mutex = Mutex()
@@ -79,11 +85,17 @@ class SessionRecorder(
 
     /**
      * 开始一个定点采样 Session 并启动共享扫描。已有采集中 Session 时不再启动第二个。
+     *
+     * 11：开始前先检查 `BLUETOOTH_SCAN`。未授予时不创建 Session、不启动扫描，因此也不会启动
+     * `connectedDevice` 前台服务。
      */
     suspend fun start(request: SessionStartRequest): SessionStartResult = mutex.withLock {
         val active = _activeSession.value
         if (active != null) {
             return@withLock SessionStartResult.AlreadyRecording(active)
+        }
+        if (!scanPermissionChecker.hasScanPermission()) {
+            return@withLock SessionStartResult.ScanPermissionMissing
         }
 
         val startedAt = clock()

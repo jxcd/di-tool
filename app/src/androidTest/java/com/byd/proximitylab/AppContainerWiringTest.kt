@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.byd.proximitylab.ble.ScanPermissionChecker
 import com.byd.proximitylab.data.ProximityLabDatabase
 import com.byd.proximitylab.session.FixedSampleLocation
 import com.byd.proximitylab.session.PhonePlacement
@@ -17,6 +18,8 @@ import com.byd.proximitylab.session.SessionTimelineEvent
 import com.byd.proximitylab.session.data.RoomSessionStore
 import com.byd.proximitylab.target.data.RoomTargetBindingStore
 import com.byd.proximitylab.testing.ControllableBleScanSource
+import com.byd.proximitylab.testing.RecordingForegroundSessionLauncher
+import com.byd.proximitylab.testing.RecordingSimulationAlarm
 import com.byd.proximitylab.testing.testAdvertisement
 import com.byd.proximitylab.testing.testBinding
 import kotlinx.coroutines.flow.first
@@ -60,6 +63,10 @@ class AppContainerWiringTest {
             context = context,
             databaseName = databaseName,
             scanSource = source,
+            // 本用例验证容器接线；平台权限与服务/通知由 11 的专门测试覆盖。
+            scanPermissionChecker = ScanPermissionChecker.ALWAYS_GRANTED,
+            foregroundSessionLauncher = RecordingForegroundSessionLauncher(),
+            simulationAlarm = RecordingSimulationAlarm(),
         )
         container = appContainer
 

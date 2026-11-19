@@ -4,6 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.byd.proximitylab.algorithmconfig.AlgorithmConfigStore
 import com.byd.proximitylab.chart.RssiChartWindow
+import com.byd.proximitylab.feedback.ForegroundSessionCoordinator
+import com.byd.proximitylab.feedback.ForegroundSessionStatus
+import com.byd.proximitylab.feedback.SimulationAlarm
+import com.byd.proximitylab.feedback.SimulationAlertCapabilities
 import com.byd.proximitylab.live.LiveMonitorController
 import com.byd.proximitylab.live.LiveMonitorState
 import com.byd.proximitylab.session.BuiltInSessionConfigs
@@ -28,6 +32,9 @@ import kotlinx.coroutines.launch
  * 06 起，模拟测试在点时读取算法配置存储的当前生效项并生成独立快照；运行中的测试始终使用开始时
  * 固定的快照，测试期间编辑配置只影响下一次测试。未接入配置存储时沿用 05 的内置默认配置。
  *
+ * 11 增加前台服务状态与通知权限/渠道快照。通知不可用只影响反馈，不影响事件记录和测试开始；
+ * 可见页面据此单独申请 Android 13+ 的 `POST_NOTIFICATIONS`。
+ *
  * 图表状态和事件历史是独立的展示流：时间窗裁剪与抽点只作用于 [chartState]；事件历史从
  * [SessionStore]/[SimulationRunStore] 读取已持久化记录，不从 UI 展示状态反推 Session。
  */
@@ -37,6 +44,8 @@ class MonitorViewModel(
     sessionStore: SessionStore? = null,
     simulationStore: SimulationRunStore? = null,
     private val markerRecorder: SessionMarkerRecorder? = null,
+    private val simulationAlarm: SimulationAlarm? = null,
+    foregroundCoordinator: ForegroundSessionCoordinator? = null,
 ) : ViewModel() {
 
     val uiState: StateFlow<LiveMonitorState> = controller.state
@@ -45,6 +54,13 @@ class MonitorViewModel(
 
     private val _markerMessage = MutableStateFlow<String?>(null)
     val markerMessage: StateFlow<String?> = _markerMessage.asStateFlow()
+
+    private val _alertCapabilities = MutableStateFlow(simulationAlarm?.capabilities())
+    val alertCapabilities: StateFlow<SimulationAlertCapabilities?> = _alertCapabilities.asStateFlow()
+
+    /** 11 的前台服务运行状态；没有平台接线的测试传入 `null`，显示为未运行。 */
+    val foregroundStatus: StateFlow<ForegroundSessionStatus> =
+        foregroundCoordinator?.status ?: MutableStateFlow(ForegroundSessionStatus())
 
     val chartState: StateFlow<MonitorChartState> =
         combine(controller.state, selectedWindow, ::buildChartState)
@@ -72,12 +88,19 @@ class MonitorViewModel(
 
     init {
         controller.startMonitoring()
+        refreshAlertCapabilities()
+    }
+
+    /** 重新读取通知权限、通知渠道和震动能力；页面恢复与权限申请返回后调用。 */
+    fun refreshAlertCapabilities() {
+        _alertCapabilities.value = simulationAlarm?.capabilities()
     }
 
     fun startSimulation() {
         _markerMessage.value = null
         viewModelScope.launch {
             startSimulationNow()
+            refreshAlertCapabilities()
         }
     }
 
@@ -93,6 +116,7 @@ class MonitorViewModel(
         _markerMessage.value = null
         viewModelScope.launch {
             controller.stopSimulation()
+            refreshAlertCapabilities()
         }
     }
 

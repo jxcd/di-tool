@@ -112,6 +112,22 @@ class TargetMonitor(
         scanSource.stop()
     }
 
+    /**
+     * 11 的会话看门狗入口：让 BLE 来源重新检查平台条件。
+     *
+     * 状态变化仍由 [scanSource.scanState] 的既有收集链路发布，不在这里伪造扫描结果。
+     */
+    fun revalidateScanAvailability() {
+        scanSource.revalidate()
+    }
+
+    /**
+     * 11 的会话看门狗入口：平台条件恢复后让 BLE 来源在同一 Session 内重新提交扫描。
+     */
+    fun resumeScanIfReady() {
+        scanSource.resumeIfReady()
+    }
+
     suspend fun bind(address: String): TargetActionResult = mutex.withLock {
         if (binding != null) {
             return@withLock TargetActionResult.AlreadyBound

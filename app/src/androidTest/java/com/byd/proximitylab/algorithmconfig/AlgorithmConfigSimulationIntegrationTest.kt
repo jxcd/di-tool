@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.byd.proximitylab.AppContainer
+import com.byd.proximitylab.ble.ScanPermissionChecker
 import com.byd.proximitylab.data.ProximityLabDatabase
 import com.byd.proximitylab.live.LiveMonitorController
 import com.byd.proximitylab.proximity.ConfirmationRequirement
@@ -21,6 +22,8 @@ import com.byd.proximitylab.simulation.data.RoomSimulationRunStore
 import com.byd.proximitylab.target.TargetMonitor
 import com.byd.proximitylab.target.data.RoomTargetBindingStore
 import com.byd.proximitylab.testing.ControllableBleScanSource
+import com.byd.proximitylab.testing.RecordingForegroundSessionLauncher
+import com.byd.proximitylab.testing.RecordingSimulationAlarm
 import com.byd.proximitylab.testing.testAdvertisement
 import com.byd.proximitylab.testing.testBinding
 import com.byd.proximitylab.ui.monitor.MonitorViewModel
@@ -183,6 +186,10 @@ class AlgorithmConfigSimulationIntegrationTest {
             context = context,
             databaseName = containerDatabaseName,
             scanSource = ControllableBleScanSource(),
+            // 本用例验证配置恢复；权限、前台服务与通知由 11 的专门测试覆盖。
+            scanPermissionChecker = ScanPermissionChecker.ALWAYS_GRANTED,
+            foregroundSessionLauncher = RecordingForegroundSessionLauncher(),
+            simulationAlarm = RecordingSimulationAlarm(),
         )
         val created: AlgorithmConfig
         try {
@@ -206,6 +213,9 @@ class AlgorithmConfigSimulationIntegrationTest {
             context = context,
             databaseName = containerDatabaseName,
             scanSource = ControllableBleScanSource(),
+            scanPermissionChecker = ScanPermissionChecker.ALWAYS_GRANTED,
+            foregroundSessionLauncher = RecordingForegroundSessionLauncher(),
+            simulationAlarm = RecordingSimulationAlarm(),
         )
         try {
             val store = second.algorithmConfigStore

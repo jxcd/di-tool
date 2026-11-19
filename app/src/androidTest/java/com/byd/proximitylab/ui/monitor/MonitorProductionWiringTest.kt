@@ -1,5 +1,6 @@
 package com.byd.proximitylab.ui.monitor
 
+import android.Manifest
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
@@ -13,9 +14,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.byd.proximitylab.AppContainer
 import com.byd.proximitylab.MainActivity
 import com.byd.proximitylab.ProximityLabApplication
+import com.byd.proximitylab.feedback.ProximityLabForegroundService
 import com.byd.proximitylab.session.SamplingSession
 import com.byd.proximitylab.session.SamplingType
 import com.byd.proximitylab.session.SessionLifecycleStatus
+import com.byd.proximitylab.testing.AndroidTestPermissions
 import com.byd.proximitylab.testing.testBinding
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -29,7 +32,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * 生产接线：MainActivity → AppContainer → MonitorViewModel → 真实 SessionRecorder/模拟测试存储。
+ * 生产接线：MainActivity → AppContainer → MonitorViewModel → 真实 SessionRecorder/模拟测试存储，
+ * 并验证 11 的 `connectedDevice` 前台服务与同一 Session 的开始/停止接合。
  */
 @RunWith(AndroidJUnit4::class)
 class MonitorProductionWiringTest {
@@ -43,11 +47,17 @@ class MonitorProductionWiringTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        AndroidTestPermissions.grant(
+            context,
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.POST_NOTIFICATIONS,
+        )
         container = (context.applicationContext as ProximityLabApplication).container
     }
 
     @After
     fun tearDown() {
+        ProximityLabForegroundService.stop(context)
         runBlocking {
             container.sessionRecorder.stop()
             // 清理本测试在应用共享数据库留下的模拟 Session，避免影响后续手工状态或同进程用例。
@@ -106,6 +116,15 @@ class MonitorProductionWiringTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("monitor_test_running", useUnmergedTree = true)
             .assertTextContains("运行中", substring = true)
+        composeRule.waitUntil(TIMEOUT_MILLIS) {
+            ProximityLabForegroundService.runningSessionId.value == session.id
+        }
+        composeRule.onNodeWithTag("monitor_foreground_status")
+            .assertTextContains("运行中", substring = true)
+        composeRule.onNodeWithTag("monitor_notification_status")
+            .assertTextContains("通知权限", substring = true)
+        composeRule.onNodeWithTag("monitor_lock_screen_limit")
+            .assertTextContains("锁屏", substring = true)
 
         // 换页到采样页再返回监控页：运行中的模拟测试不结束。
         composeRule.onNodeWithTag("nav_sampling").performClick()
@@ -132,6 +151,11 @@ class MonitorProductionWiringTest {
         assertEquals(SessionLifecycleStatus.COMPLETED, completed.status)
         assertNotNull(completed.endedAtEpochMillis)
         assertNotNull(runBlocking { container.sessionStore.loadConfigSnapshot(session.id) })
+        composeRule.waitUntil(TIMEOUT_MILLIS) {
+            ProximityLabForegroundService.runningSessionId.value == null
+        }
+        composeRule.onNodeWithTag("monitor_foreground_status")
+            .assertTextContains("未运行", substring = true)
     }
 
     private fun latestSimulation(): SamplingSession? = runBlocking {

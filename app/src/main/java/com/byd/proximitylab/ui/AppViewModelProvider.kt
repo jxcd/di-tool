@@ -5,6 +5,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.byd.proximitylab.algorithmconfig.AlgorithmConfigStore
 import com.byd.proximitylab.comparison.SessionComparisonService
+import com.byd.proximitylab.feedback.ForegroundSessionCoordinator
+import com.byd.proximitylab.feedback.SimulationAlarm
 import com.byd.proximitylab.live.LiveMonitorController
 import com.byd.proximitylab.replay.SessionReplayService
 import com.byd.proximitylab.session.SessionMarkerRecorder
@@ -37,6 +39,8 @@ object AppViewModelProvider {
         sessionStore: SessionStore? = null,
         simulationStore: SimulationRunStore? = null,
         markerRecorder: SessionMarkerRecorder? = null,
+        simulationAlarm: SimulationAlarm? = null,
+        foregroundCoordinator: ForegroundSessionCoordinator? = null,
     ): ViewModelProvider.Factory =
         viewModelFactory {
             initializer {
@@ -46,6 +50,8 @@ object AppViewModelProvider {
                     sessionStore,
                     simulationStore,
                     markerRecorder,
+                    simulationAlarm,
+                    foregroundCoordinator,
                 )
             }
         }

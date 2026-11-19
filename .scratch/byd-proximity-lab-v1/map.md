@@ -85,6 +85,8 @@ flowchart LR
 
 - 票据 10：同一 Session 可对原始快照与多套配置同轴回放并按含端点的允许窗口评分（提前/按时/迟到/漏触发/误触发/观测不足/跳过），汇总只纳入评分试验并保留剔除原因与每项配置/版本；验证：实施与脚本 gate 的 `:app:testDebugUnitTest --rerun-tasks :app:assembleDebug :app:lintDebug` 180 tests 0 failures、`connectedDebugAndroidTest` 78 tests 0 failures/1 skipped，复审窄范围 `SessionScoringTest` 8/0 与 `SessionComparisonRoomTest`+`AlgorithmComparisonScreenTest` 8/0、APK 仅 `BLUETOOTH_SCAN` neverForLocation 且无 INTERNET（本记录轮未重跑）；下游：`SessionComparisonService.compare/loadContext/observeSessions`、`SessionScoring.evaluate`、`ComparisonSummaryBuilder.build`、`SessionComparisonChart.build`、`AlgorithmComparisonSection`（`lab_compare_*` 标识），供 12 复用。
 
+- 票据 11：锁屏与后台采集反馈闭环完成——用户主动开始的 Session 由 connectedDevice 前台服务承接，启动前检查 `BLUETOOTH_SCAN`，模拟事件按稳定 eventId 写回已提交/通知不可用等反馈，权限撤销与蓝牙关闭可观察且恢复零补触发，进程中断重开可查 INTERRUPTED 与已存记录；验证：实施与 gate 的 `:app:testDebugUnitTest --rerun-tasks :app:assembleDebug :app:lintDebug` 196 tests 0 failures、`:app:connectedDebugAndroidTest` 85 tests 0 failures/1 skipped（既有真实广告者 skip）、aapt2 实测 `FOREGROUND_SERVICE`/`FOREGROUND_SERVICE_CONNECTED_DEVICE`/connectedDevice 且无 INTERNET，复审窄范围 16 tests 0 failures（本记录轮未重跑）；下游：`SimulationFeedbackCoordinator.follow`、`ForegroundSessionLauncher`/`ForegroundSessionStatus`、`ProximityLabForegroundService.start/stop`、`ScanPermissionChecker`、`SessionScanWatchdog`、`SimulationAlarm`/`SimulationAlertDelivery`，锁屏收包与通知呈现留待 13/14 现场。
+
 ## Fog
 
 - [01](issues/01-android-bootstrap.md) 先实际验证选定版本的构建、KSP、依赖解析与 Lint。供应商文档的支持范围及已核验的 Android AAR 要求见 [Android 技术基线](android-toolchain.md)。
