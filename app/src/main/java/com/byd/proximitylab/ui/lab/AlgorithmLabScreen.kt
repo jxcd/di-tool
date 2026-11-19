@@ -137,6 +137,15 @@ fun AlgorithmLabScreen(
                 )
             }
         }
+
+        AlgorithmComparisonSection(
+            state = uiState,
+            onSelectSession = viewModel::selectComparisonSession,
+            onToggleTarget = viewModel::toggleComparisonTarget,
+            onEarlyToleranceChange = viewModel::updateComparisonEarlyTolerance,
+            onLateToleranceChange = viewModel::updateComparisonLateTolerance,
+            onRun = viewModel::runComparison,
+        )
     }
 
     uiState.form?.let { form ->
@@ -658,6 +667,9 @@ private fun rememberAlgorithmLabViewModel(): AlgorithmLabViewModel {
     val context = LocalContext.current
     val application = context.applicationContext as ProximityLabApplication
     return viewModel(
-        factory = AppViewModelProvider.labFactory(application.container.algorithmConfigStore),
+        factory = AppViewModelProvider.labFactory(
+            store = application.container.algorithmConfigStore,
+            comparisonService = application.container.sessionComparisonService,
+        ),
     )
 }

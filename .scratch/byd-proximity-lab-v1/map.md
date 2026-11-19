@@ -83,6 +83,8 @@ flowchart LR
 - 票据 08：定点与行走采样、人工参考标记、Session 详情/筛选/改名/标签/删除接到真实采集与 Room v5，评分只采用覆盖范围内标记且不改原始观测；验证：`:app:testDebugUnitTest` 166 tests、`:app:connectedDebugAndroidTest` 60 tests（1 skipped 既有真实广告者）均 0 failures，`:app:assembleDebug`/`:app:lintDebug` 通过且 APK 无 INTERNET（由实施与脚本 gate 执行，本记录轮未重跑）。下游：`SessionMarkerRecorder`、`SessionMarkerPolicy`、`SessionDetailBuilder`/`SessionDetailSnapshot.sessionId`（09 回放入口）、`SessionListFilter`、`SessionStore` 的改名/标签/标记读写（供 09、10 使用）。
 - 票据 09：Session 详情可用当次配置快照（或具名/当前配置）独立回放并持久化回放记录，复用共享判定入口按真实相对时间推进，区分 `REPRODUCED`/`NEW_CALCULATION`/`VERSION_RECOMPUTED` 且不触碰实时历史与反馈；验证：`:app:testDebugUnitTest` 172 tests、`:app:connectedDebugAndroidTest` 70 tests（1 skipped 既有真实广告者）均 0 failures，`:app:assembleDebug`/`:app:lintDebug` 通过且 APK 无 INTERNET（由实施与脚本 gate 执行，本记录轮未重跑）；下游：`SessionReplayService.replay/observeReplays/loadReplays/loadReplay`、`ReplayConfigRequest`、`SessionReplayRecord`/`ReplayVersionInfo`、`SessionReplayStore`、`SessionReplayChart`，供 10 比较与评分。
 
+- 票据 10：同一 Session 可对原始快照与多套配置同轴回放并按含端点的允许窗口评分（提前/按时/迟到/漏触发/误触发/观测不足/跳过），汇总只纳入评分试验并保留剔除原因与每项配置/版本；验证：实施与脚本 gate 的 `:app:testDebugUnitTest --rerun-tasks :app:assembleDebug :app:lintDebug` 180 tests 0 failures、`connectedDebugAndroidTest` 78 tests 0 failures/1 skipped，复审窄范围 `SessionScoringTest` 8/0 与 `SessionComparisonRoomTest`+`AlgorithmComparisonScreenTest` 8/0、APK 仅 `BLUETOOTH_SCAN` neverForLocation 且无 INTERNET（本记录轮未重跑）；下游：`SessionComparisonService.compare/loadContext/observeSessions`、`SessionScoring.evaluate`、`ComparisonSummaryBuilder.build`、`SessionComparisonChart.build`、`AlgorithmComparisonSection`（`lab_compare_*` 标识），供 12 复用。
+
 ## Fog
 
 - [01](issues/01-android-bootstrap.md) 先实际验证选定版本的构建、KSP、依赖解析与 Lint。供应商文档的支持范围及已核验的 Android AAR 要求见 [Android 技术基线](android-toolchain.md)。

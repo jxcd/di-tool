@@ -7,6 +7,7 @@ import com.byd.proximitylab.algorithmconfig.AlgorithmConfigStore
 import com.byd.proximitylab.algorithmconfig.data.RoomAlgorithmConfigStore
 import com.byd.proximitylab.ble.AndroidBleScanSource
 import com.byd.proximitylab.ble.BleScanSource
+import com.byd.proximitylab.comparison.SessionComparisonService
 import com.byd.proximitylab.data.ProximityLabDatabase
 import com.byd.proximitylab.replay.SessionReplayService
 import com.byd.proximitylab.replay.SessionReplayStore
@@ -96,6 +97,15 @@ class AppContainer(
     val sessionReplayService: SessionReplayService = SessionReplayService(
         sessionStore = sessionStore,
         replayStore = sessionReplayStore,
+        configStore = algorithmConfigStore,
+    )
+
+    /**
+     * 10 的同一 Session 多配置对比评分入口，复用 09 的真实回放服务与 06 的配置存储。
+     */
+    val sessionComparisonService: SessionComparisonService = SessionComparisonService(
+        sessionStore = sessionStore,
+        replayService = sessionReplayService,
         configStore = algorithmConfigStore,
     )
 

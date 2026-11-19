@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.byd.proximitylab.algorithmconfig.AlgorithmConfigStore
+import com.byd.proximitylab.comparison.SessionComparisonService
 import com.byd.proximitylab.live.LiveMonitorController
 import com.byd.proximitylab.replay.SessionReplayService
 import com.byd.proximitylab.session.SessionMarkerRecorder
@@ -22,9 +23,12 @@ import com.byd.proximitylab.ui.sampling.SamplingViewModel
  */
 object AppViewModelProvider {
 
-    fun labFactory(store: AlgorithmConfigStore): ViewModelProvider.Factory =
+    fun labFactory(
+        store: AlgorithmConfigStore,
+        comparisonService: SessionComparisonService? = null,
+    ): ViewModelProvider.Factory =
         viewModelFactory {
-            initializer { AlgorithmLabViewModel(store) }
+            initializer { AlgorithmLabViewModel(store, comparisonService) }
         }
 
     fun monitorFactory(
