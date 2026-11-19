@@ -87,6 +87,8 @@ flowchart LR
 
 - 票据 11：锁屏与后台采集反馈闭环完成——用户主动开始的 Session 由 connectedDevice 前台服务承接，启动前检查 `BLUETOOTH_SCAN`，模拟事件按稳定 eventId 写回已提交/通知不可用等反馈，权限撤销与蓝牙关闭可观察且恢复零补触发，进程中断重开可查 INTERRUPTED 与已存记录；验证：实施与 gate 的 `:app:testDebugUnitTest --rerun-tasks :app:assembleDebug :app:lintDebug` 196 tests 0 failures、`:app:connectedDebugAndroidTest` 85 tests 0 failures/1 skipped（既有真实广告者 skip）、aapt2 实测 `FOREGROUND_SERVICE`/`FOREGROUND_SERVICE_CONNECTED_DEVICE`/connectedDevice 且无 INTERNET，复审窄范围 16 tests 0 failures（本记录轮未重跑）；下游：`SimulationFeedbackCoordinator.follow`、`ForegroundSessionLauncher`/`ForegroundSessionStatus`、`ProximityLabForegroundService.start/stop`、`ScanPermissionChecker`、`SessionScanWatchdog`、`SimulationAlarm`/`SimulationAlertDelivery`，锁屏收包与通知呈现留待 13/14 现场。
 
+- 票据 12：软件端到端验收通过并交付现场前提——真实 `MainActivity` 导航主路径与 5 条反例经 instrumentation 验证，修复 `TargetMonitor` 绑定竞态（04），产出可安装 APK 与 [现场交接](../../docs/field-handover-v1.md)；验证：实施与脚本 gate 的 `:app:testDebugUnitTest --rerun-tasks :app:assembleDebug :app:lintDebug` 197 tests 0 failures、lint 0 errors/3 warnings，`:app:connectedDebugAndroidTest` 92 tests 0 failures/1 skipped，复审窄跑 3 个 verification 类 7/0，APK SHA-256 `6754a81b…`（本记录轮仅复核 APK 校验和与 `git diff --check`）；下游：`ProximityLabApplication.setContainerForTest`、`SoftwareVerificationHarness` 与 3 个 verification 测试类、`docs/field-handover-v1.md` 供 13/14 使用。
+
 ## Fog
 
 - [01](issues/01-android-bootstrap.md) 先实际验证选定版本的构建、KSP、依赖解析与 Lint。供应商文档的支持范围及已核验的 Android AAR 要求见 [Android 技术基线](android-toolchain.md)。

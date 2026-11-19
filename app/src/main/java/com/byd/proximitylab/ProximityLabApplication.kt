@@ -41,15 +41,30 @@ import kotlinx.coroutines.launch
 
 class ProximityLabApplication : Application() {
 
+    @Volatile
+    private var containerOverride: AppContainer? = null
+
     /**
-     * 生产容器使用 Android 权限与前台服务/通知实现。测试可以显式传入受控替身，
-     * 只在 Android 平台边界替代系统调用。
+     * 生产容器使用 Android 权限与前台服务/通知实现。
+     *
+     * instrumentation 可以通过 [setContainerForTest] 注入只替代 BLE、通知和前台服务边界的容器；
+     * 生产路径始终使用按需创建的唯一默认容器。
      */
-    val container: AppContainer by lazy {
+    val container: AppContainer
+        get() = containerOverride ?: defaultContainer
+
+    private val defaultContainer: AppContainer by lazy {
         AppContainer(
             context = this,
             scanPermissionChecker = AndroidScanPermissionChecker(this),
         )
+    }
+
+    /**
+     * 仅供 instrumentation 使用：在 `MainActivity` 启动前注入可控容器，传入 `null` 恢复生产容器。
+     */
+    fun setContainerForTest(container: AppContainer?) {
+        containerOverride = container
     }
 }
 

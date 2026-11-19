@@ -11,6 +11,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -58,6 +60,57 @@ class TargetMonitorTest {
         advanceUntilIdle()
         assertEquals(ScanAvailability.BluetoothOff, monitor.state.value.scanState)
         assertFalse(monitor.state.value.targetObservedInCurrentScan)
+    }
+
+    @Test
+    fun delayedInitialNullEmissionDoesNotClearBindingSavedAfterMonitorStart() = runTest {
+        val source = ControllableBleScanSource()
+        val store = StaleEmissionBindingStore()
+        val monitorScope = testMonitorScope()
+        val monitor = TargetMonitor(source, store, monitorScope, clock = { now })
+        advanceUntilIdle()
+
+        monitor.startScan()
+        advanceUntilIdle()
+        assertTrue(source.emit(testAdvertisement(address = addressA)))
+        advanceUntilIdle()
+        val result = monitor.bind(addressA)
+        assertTrue(result is TargetActionResult.Success)
+        val targetId = (result as TargetActionResult.Success).binding.targetId
+
+        // 模拟 Room 初始查询在保存之后才送达空值；权威存储值仍是刚绑定的目标。
+        store.emitStale(null)
+        advanceUntilIdle()
+
+        assertEquals(targetId, monitor.state.value.binding?.targetId)
+        assertEquals(addressA, monitor.state.value.binding?.address)
+        assertEquals(IdentityStatus.CONFIRMED, monitor.state.value.identity.status)
+    }
+
+    private class StaleEmissionBindingStore : TargetBindingStore {
+
+        private val emissions = MutableSharedFlow<BoundTarget?>(replay = 1)
+        private var stored: BoundTarget? = null
+
+        init {
+            emissions.tryEmit(null)
+        }
+
+        override fun observeBinding(): Flow<BoundTarget?> = emissions
+
+        override suspend fun loadBinding(): BoundTarget? = stored
+
+        override suspend fun saveBinding(binding: BoundTarget) {
+            stored = binding
+        }
+
+        override suspend fun clearBinding() {
+            stored = null
+        }
+
+        fun emitStale(binding: BoundTarget?) {
+            emissions.tryEmit(binding)
+        }
     }
 
     @Test

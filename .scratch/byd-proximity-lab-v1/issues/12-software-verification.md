@@ -1,7 +1,7 @@
 # 12 完成软件端到端验证和现场交接
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 10, 11
 User stories: 1–37
 
@@ -37,4 +37,52 @@ User stories: 1–37
 - 复核 [规格](../spec.md) 中的 37 条用户故事均有票据及验收归属。可控 BLE 台架和目标车结果留给相应现场票。
 - 给出可复现的安装与运行方式，现场人员能确认 App 版本并走完两类独立验收。
 
+## Answer
+
+### 完成内容
+
+- 新增 `SoftwareVerificationHarness` 与三个 instrumentation 验收类：`SoftwareVerificationNavigationTest`（真实 `MainActivity` + Compose Navigation + 页面点击）、`SoftwareVerificationFlowTest`（生产 `AppContainer`/ViewModel/Room/共享判定）、`SoftwareVerificationBoundaryTest`（5 条反例与恢复路径）。夹具只替代 BLE 系统回调、通知/前台服务边界与独立数据库名。
+- 主路径串联：设备页扫描与人工绑定 → 算法实验室新建并选择配置 → 行走采样与人工标记 → 监控页模拟测试与 `FAR → NEAR` 事件 → Session 详情（快照/原始时间线/标记/事件）→ 原样回放 → 另一套配置对比与评分。
+- 反例覆盖：近端冷启动 0 事件与同一扫描帧重复投递不累积证据；样本过期和停扫恢复回到 `UNKNOWN` 且不补触发，恢复后可信 `FAR → NEAR` 只产生一次事件；身份不确定时观测不入判定；中断 Session 启动恢复为 `INTERRUPTED` 且评分记观测不足；通知不可用仍写事件并标反馈不可用；回放与对比不触发实时通知、不改写历史。
+- 修复 `TargetMonitor` 绑定竞态（负责票 04）：`observeBinding()` 的首次空发射若在保存后送达会覆盖新绑定；改为每次发射后以 `bindingStore.loadBinding()` 的当前存储值为准（公开 API 不变）。新增 `TargetMonitorTest.delayedInitialNullEmissionDoesNotClearBindingSavedAfterMonitorStart` 回归用例。
+- 新增测试接缝 `ProximityLabApplication.setContainerForTest(AppContainer?)`：仅供 instrumentation 在 `MainActivity` 启动前注入只替代 BLE/通知/前台服务边界的容器，传入 `null` 恢复生产容器；生产 `container` 仍按需创建唯一默认实例，公开类型不变。
+- 新增 `docs/field-handover-v1.md`：版本/APK/SHA-256/SDK、安装启动命令、权限与只读约束、初始状态、13/14 场景与判读、两类验收独立记录、复验命令、未测项与记录模板。
+- 产出 debug APK `app/build/outputs/apk/debug/app-debug.apk`（`com.byd.proximitylab`，versionCode 1 / versionName 1.0，SHA-256 `6754a81b9aff00f82ec7468d76275d840f723b68e7a48b38c726f0d1ff32791a`）。
+
+### 实际验证
+
+下文结果由实施、脚本 gate 与独立复审执行；本次记录轮只复跑标注「本次记录轮复核」的两项。
+
+- `JAVA_HOME="$PWD/.tooling/jdk-21" ./gradlew :app:connectedDebugAndroidTest --console=plain` → BUILD SUCCESSFUL in 4m45s；`TEST-Medium_Phone_API_37.0(AVD) - 17.xml` 为 92 tests、0 failures、0 errors、1 skipped（既有真实 BLE 广告者用例按 Assume 跳过）；三个 verification 类全部 0 failures。
+- `JAVA_HOME="$PWD/.tooling/jdk-21" ./gradlew :app:testDebugUnitTest --rerun-tasks :app:assembleDebug :app:lintDebug --console=plain` → BUILD SUCCESSFUL in 3m10s；JVM 197 tests、0 failures、0 errors、0 skipped；lint 0 errors、3 warnings（OldTargetApi / ObsoleteSdkInt / MonochromeLauncherIcon）。
+- 聚焦主路径：`... --class=com.byd.proximitylab.verification.SoftwareVerificationNavigationTest` → BUILD SUCCESSFUL in 57s；1 test、0 failures。
+- 聚焦竞态回归：`:app:testDebugUnitTest --tests "com.byd.proximitylab.target.TargetMonitorTest.delayedInitialNullEmissionDoesNotClearBindingSavedAfterMonitorStart"` → 1 test、0 failures。
+- 复审窄跑三个 verification 类：7 tests、0 failures（navigation 43.648s、flow 3.365s、boundary 5 tests 11.271s）。
+- `:app:buildEnvironment` → Daemon JVM 为 Eclipse Temurin 21.0.13+9-LTS（`.tooling/jdk-21`）；Gradle 9.9.1、AGP 9.5.1、Kotlin/Compose Compiler 2.4.21、KSP 2.3.14（未发现 alpha/beta/rc/动态版本）。
+- 安装/启动（实施与 gate）：`adb install app/build/outputs/apk/debug/app-debug.apk` → Success；`am start -W -n com.byd.proximitylab/.MainActivity` → Status: ok、LaunchState: COLD、TotalTime 1810ms；`ro.build.version.sdk=37`，`dumpsys package` 为 versionCode=1 / versionName=1.0 / minSdk=31 / targetSdk=36。
+- `aapt2 dump badging`/`dump permissions` 与合并 Manifest：compileSdk 37 / minSdk 31 / targetSdk 36；权限仅 `BLUETOOTH_SCAN`(neverForLocation)、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_CONNECTED_DEVICE`、`POST_NOTIFICATIONS`、`VIBRATE` 等，无 `INTERNET`/`BLUETOOTH_CONNECT`/定位；`ProximityLabForegroundService` 为 exported=false、foregroundServiceType=connectedDevice。
+- 本次记录轮复核：`sha256sum app/build/outputs/apk/debug/app-debug.apk` → `6754a81b9aff00f82ec7468d76275d840f723b68e7a48b38c726f0d1ff32791a`（与交接文档一致）；`git diff --check 6f6122295c982ba956e0466d0d21def26ad131e2` → exit 0。
+- 用户故事：脚本读取 01–14 的 `User stories` 元数据，1–37 均有至少一张票据归属，missing=[]。
+- 已知偶发：既有 Compose 页面测试可能出现 `performMeasureAndLayout called during measure layout` 进程崩溃（10 已记录），重跑后本次全量通过（见 `docs/field-handover-v1.md` §7）。
+
+### 公开入口与下游
+
+- `ProximityLabApplication.setContainerForTest(container: AppContainer?)`：instrumentation 专用注入接缝；生产容器仍按需创建唯一默认实例。
+- `TargetMonitor` 绑定同步以 `bindingStore.loadBinding()` 为权威值（公开 API 不变），负责票 04。
+- 验收用例：`SoftwareVerificationNavigationTest.navigatesFromDeviceBindingThroughSamplingSimulationDetailReplayAndComparison`、`SoftwareVerificationFlowTest.mainPathBindsSamplesSimulatesAndComparesThroughProductionEntries`、`SoftwareVerificationBoundaryTest`（5 条反例），以及 `SoftwareVerificationHarness`。
+- 现场交接：`docs/field-handover-v1.md`，供 13/14 使用安装与版本核对、初始状态、场景步骤、记录字段与复验命令。
+- 可安装产物：`app/build/outputs/apk/debug/app-debug.apk`（SHA-256 `6754a81b9aff00f82ec7468d76275d840f723b68e7a48b38c726f0d1ff32791a`）。
+
+### 未测项
+
+- Android 12（API 31）与 Android 13（API 33）安装/启动未执行：本机只有 API 37 模拟器（`Medium_Phone_API_37.0`）；API 37 代表覆盖 API 33+ 通知权限与 API 34+ connectedDevice 前台服务路径，实际 API 36 设备未测。
+- 真实 BLE 广告者、真实锁屏收包与锁屏通知实际呈现未执行；`AndroidBleScanSourceTest` 真实广告者用例按 Assume 跳过，通知呈现仅在 instrumentation 中检查 `NotificationManager.activeNotifications`。
+- API 33+ 真机撤销 `POST_NOTIFICATIONS` 导致进程终止的场景未执行；通知不可用分支由 `RecordingSimulationAlarm` 受控能力与既有测试覆盖。
+- 未执行 release 构建、release Lint 或签名交付；仅执行 debug assemble/lint/connected。
+- 未在 13 可控 BLE 台架或 14 目标车/目标手机现场验收；车辆休眠、地址轮换、相邻车辆、锁屏连续性与耗电表现待现场记录。
+- 未在真实 Android 12/13 设备上执行 MainActivity 导航主路径；导航验证在 API 37 模拟器完成。
+- 复审遗留（low）：EARLY/LATE 评分由 10 的 `SessionScoringTest` 覆盖（gate 全量 JVM 197 tests 内），但未在 12 的新用例与现场交接表单中单独列出；不影响通过结论。
+
 ## Comments
+
+- claimed at HEAD 6f6122295c982ba956e0466d0d21def26ad131e2

@@ -69,7 +69,10 @@ class TargetMonitor(
 
     init {
         scope.launch {
-            bindingStore.observeBinding().collect { stored ->
+            bindingStore.observeBinding().collect {
+                // observeBinding 的首次发射可能代表查询开始时的空值；若用户在查询完成前已完成绑定，
+                // 直接用该发射会覆盖刚写入的绑定。始终以存储当前值作为权威值，避免这种时序竞态。
+                val stored = bindingStore.loadBinding()
                 mutex.withLock {
                     if (stored == binding) {
                         return@withLock
