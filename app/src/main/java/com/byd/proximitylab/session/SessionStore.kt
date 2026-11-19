@@ -69,9 +69,39 @@ interface SessionStore {
     suspend fun loadRecordingSessions(): List<SamplingSession>
 
     /**
-     * 删除指定 Session 及其时间线、快照和运行结果。供 08 的 Session 管理和测试清理复用。
+     * 删除指定 Session 及其时间线、快照、运行结果和人工标记。供 08 的 Session 管理和测试清理复用。
      */
     suspend fun deleteSession(sessionId: String)
+
+    /**
+     * 改名只更新 Session 元数据，不修改时间线。
+     */
+    suspend fun renameSession(sessionId: String, name: String): SamplingSession?
+
+    /**
+     * 修改整次试验的人工标签，只影响评价，不修改时间线。
+     */
+    suspend fun updateEvaluationLabel(
+        sessionId: String,
+        label: SessionEvaluationLabel,
+    ): SamplingSession?
+
+    fun observeReferenceMarkers(sessionId: String): Flow<List<SessionReferenceMarker>>
+
+    suspend fun loadReferenceMarkers(sessionId: String): List<SessionReferenceMarker>
+
+    /**
+     * 写入一条人工参考标记。Session 不存在时返回 `null`。
+     *
+     * 记录 [ReferenceMarkerKind.EXPECTED_TRIGGER] 时，如果 Session 仍是未标记，则把标签提升为
+     * [SessionEvaluationLabel.EXPECTED_TRIGGER]；已有负样本标签不覆盖。标记写入与标签提升在 Room 实现中同事务。
+     */
+    suspend fun insertReferenceMarker(marker: SessionReferenceMarker): SessionReferenceMarker?
+
+    /**
+     * 删除一条人工标记。返回是否确实删除了记录。
+     */
+    suspend fun deleteReferenceMarker(markerId: String): Boolean
 
     /**
      * 恢复时批量标记遗留的采集中 Session，返回标记数量。

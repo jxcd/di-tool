@@ -15,10 +15,13 @@ import com.byd.proximitylab.proximity.ProximityAlgorithm
 import com.byd.proximitylab.proximity.ProximityConfig
 import com.byd.proximitylab.session.FixedSampleLocation
 import com.byd.proximitylab.session.PhonePlacement
+import com.byd.proximitylab.session.ReferenceMarkerKind
 import com.byd.proximitylab.session.SamplingSession
 import com.byd.proximitylab.session.SamplingType
 import com.byd.proximitylab.session.SessionConfigSnapshot
+import com.byd.proximitylab.session.SessionEvaluationLabel
 import com.byd.proximitylab.session.SessionLifecycleStatus
+import com.byd.proximitylab.session.SessionReferenceMarker
 import com.byd.proximitylab.session.SessionStore
 import com.byd.proximitylab.session.SessionSummary
 import com.byd.proximitylab.session.SessionTimelineEvent
@@ -29,6 +32,7 @@ import kotlinx.coroutines.flow.map
 /**
  * 采样 Session 表。时间都是 UTC epoch 毫秒；[endedAtEpochMillis] 只表示正常结束，
  * [lastRecordedAtEpochMillis] 是已写入时间线的覆盖终点，[interruptedDetectedAtEpochMillis] 只用于诊断。
+ * [evaluationLabel] 是 08 的整次试验人工标签，只影响评价，不修改时间线。
  */
 @Entity(tableName = "sampling_session")
 data class SamplingSessionEntity(
@@ -46,6 +50,7 @@ data class SamplingSessionEntity(
     val endedAtEpochMillis: Long?,
     val lastRecordedAtEpochMillis: Long,
     val interruptedDetectedAtEpochMillis: Long?,
+    @ColumnInfo(defaultValue = "'UNMARKED'") val evaluationLabel: String,
 ) {
     fun toDomain(): SamplingSession = SamplingSession(
         id = id,
@@ -62,6 +67,7 @@ data class SamplingSessionEntity(
         endedAtEpochMillis = endedAtEpochMillis,
         lastRecordedAtEpochMillis = lastRecordedAtEpochMillis,
         interruptedDetectedAtEpochMillis = interruptedDetectedAtEpochMillis,
+        evaluationLabel = SessionEvaluationLabel.valueOf(evaluationLabel),
     )
 
     companion object {
@@ -80,6 +86,7 @@ data class SamplingSessionEntity(
             endedAtEpochMillis = session.endedAtEpochMillis,
             lastRecordedAtEpochMillis = session.lastRecordedAtEpochMillis,
             interruptedDetectedAtEpochMillis = session.interruptedDetectedAtEpochMillis,
+            evaluationLabel = session.evaluationLabel.name,
         )
     }
 }
@@ -358,6 +365,54 @@ data class SessionTimelineEntity(
 }
 
 /**
+ * 人工参考标记表。与时间线分表保存，删除/编辑标签不会改动原始观测；Session 删除时级联清理。
+ */
+@Entity(
+    tableName = "session_reference_marker",
+    foreignKeys = [
+        ForeignKey(
+            entity = SamplingSessionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["sessionId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["sessionId"]),
+        Index(value = ["sessionId", "atEpochMillis"]),
+    ],
+)
+data class SessionReferenceMarkerEntity(
+    @PrimaryKey val markerId: String,
+    val sessionId: String,
+    val kind: String,
+    val atEpochMillis: Long,
+    val note: String?,
+    val createdAtEpochMillis: Long,
+) {
+    fun toDomain(): SessionReferenceMarker = SessionReferenceMarker(
+        markerId = markerId,
+        sessionId = sessionId,
+        kind = ReferenceMarkerKind.valueOf(kind),
+        atEpochMillis = atEpochMillis,
+        note = note,
+        createdAtEpochMillis = createdAtEpochMillis,
+    )
+
+    companion object {
+        fun fromDomain(marker: SessionReferenceMarker): SessionReferenceMarkerEntity =
+            SessionReferenceMarkerEntity(
+                markerId = marker.markerId,
+                sessionId = marker.sessionId,
+                kind = marker.kind.name,
+                atEpochMillis = marker.atEpochMillis,
+                note = marker.note,
+                createdAtEpochMillis = marker.createdAtEpochMillis,
+            )
+    }
+}
+
+/**
  * 列表查询结果，附带 Session 内的原始样本数。
  */
 data class SessionSummaryRow(
@@ -460,6 +515,50 @@ interface SamplingSessionDao {
         updateCoverage(entity.sessionId, entity.processedAtEpochMillis)
         return sequence
     }
+
+    @Query("UPDATE sampling_session SET name = :name WHERE id = :sessionId")
+    suspend fun updateSessionName(sessionId: String, name: String): Int
+
+    @Query("UPDATE sampling_session SET evaluationLabel = :label WHERE id = :sessionId")
+    suspend fun updateSessionEvaluationLabel(sessionId: String, label: String): Int
+
+    /**
+     * 记录期望触发点时把未标记 Session 提升为期望触发正样本；负样本标签保持不变。
+     */
+    @Query(
+        "UPDATE sampling_session SET evaluationLabel = 'EXPECTED_TRIGGER' " +
+            "WHERE id = :sessionId AND evaluationLabel = 'UNMARKED'",
+    )
+    suspend fun promoteEvaluationLabelToExpected(sessionId: String): Int
+
+    @Query(
+        "SELECT * FROM session_reference_marker WHERE sessionId = :sessionId " +
+            "ORDER BY atEpochMillis, markerId",
+    )
+    fun observeReferenceMarkers(sessionId: String): Flow<List<SessionReferenceMarkerEntity>>
+
+    @Query(
+        "SELECT * FROM session_reference_marker WHERE sessionId = :sessionId " +
+            "ORDER BY atEpochMillis, markerId",
+    )
+    suspend fun loadReferenceMarkers(sessionId: String): List<SessionReferenceMarkerEntity>
+
+    @Insert
+    suspend fun insertReferenceMarkerEntity(entity: SessionReferenceMarkerEntity)
+
+    @Query("DELETE FROM session_reference_marker WHERE markerId = :markerId")
+    suspend fun deleteReferenceMarkerEntity(markerId: String): Int
+
+    /**
+     * 标记写入与正样本标签提升在同一事务中，避免出现“有期望触发点但仍未标记”的中间状态。
+     */
+    @Transaction
+    suspend fun insertReferenceMarkerAndPromoteLabel(entity: SessionReferenceMarkerEntity) {
+        insertReferenceMarkerEntity(entity)
+        if (entity.kind == ReferenceMarkerKind.EXPECTED_TRIGGER.name) {
+            promoteEvaluationLabelToExpected(entity.sessionId)
+        }
+    }
 }
 
 /**
@@ -561,6 +660,46 @@ class RoomSessionStore(
     override suspend fun deleteSession(sessionId: String) {
         dao.deleteSession(sessionId)
     }
+
+    override suspend fun renameSession(sessionId: String, name: String): SamplingSession? {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) {
+            return null
+        }
+        dao.updateSessionName(sessionId, trimmed)
+        return dao.loadSession(sessionId)?.toDomain()
+    }
+
+    override suspend fun updateEvaluationLabel(
+        sessionId: String,
+        label: SessionEvaluationLabel,
+    ): SamplingSession? {
+        dao.updateSessionEvaluationLabel(sessionId, label.name)
+        return dao.loadSession(sessionId)?.toDomain()
+    }
+
+    override fun observeReferenceMarkers(sessionId: String): Flow<List<SessionReferenceMarker>> =
+        dao.observeReferenceMarkers(sessionId).map { entities ->
+            entities.map { entity -> entity.toDomain() }
+        }
+
+    override suspend fun loadReferenceMarkers(sessionId: String): List<SessionReferenceMarker> =
+        dao.loadReferenceMarkers(sessionId).map { entity -> entity.toDomain() }
+
+    override suspend fun insertReferenceMarker(
+        marker: SessionReferenceMarker,
+    ): SessionReferenceMarker? {
+        if (dao.loadSession(marker.sessionId) == null) {
+            return null
+        }
+        dao.insertReferenceMarkerAndPromoteLabel(
+            SessionReferenceMarkerEntity.fromDomain(marker),
+        )
+        return marker
+    }
+
+    override suspend fun deleteReferenceMarker(markerId: String): Boolean =
+        dao.deleteReferenceMarkerEntity(markerId) > 0
 
     override suspend fun markRecordingSessionsInterrupted(
         detectedAtEpochMillis: Long,

@@ -14,9 +14,12 @@ import com.byd.proximitylab.proximity.ProximityEventReason
 import com.byd.proximitylab.proximity.ProximityEventType
 import com.byd.proximitylab.session.FixedSampleLocation
 import com.byd.proximitylab.session.PhonePlacement
+import com.byd.proximitylab.session.ReferenceMarkerKind
 import com.byd.proximitylab.session.SamplingSession
 import com.byd.proximitylab.session.SamplingType
+import com.byd.proximitylab.session.SessionEvaluationLabel
 import com.byd.proximitylab.session.SessionLifecycleStatus
+import com.byd.proximitylab.session.SessionReferenceMarker
 import com.byd.proximitylab.session.SessionTimelineEvent
 import com.byd.proximitylab.session.coverageEndEpochMillis
 import com.byd.proximitylab.session.data.RoomSessionStore
@@ -77,6 +80,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
+            ProximityLabDatabase.MIGRATION_4_5,
         ).build()
 
         try {
@@ -120,7 +124,7 @@ class ProximityLabDatabaseMigrationTest {
             assertEquals(session.id, sessionStore.loadSession(session.id)?.id)
             assertEquals(1, sessionStore.loadTimeline(session.id).size)
             assertEquals(
-                4,
+                5,
                 database.openHelper.readableDatabase
                     .query("PRAGMA user_version")
                     .use { cursor ->
@@ -142,6 +146,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
+            ProximityLabDatabase.MIGRATION_4_5,
         ).build()
         try {
             assertEquals(expectedBinding, RoomTargetBindingStore(reopened.targetBindingDao()).loadBinding())
@@ -166,6 +171,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
+            ProximityLabDatabase.MIGRATION_4_5,
         ).build()
 
         try {
@@ -207,7 +213,7 @@ class ProximityLabDatabaseMigrationTest {
             )
             assertEquals(1, runStore.loadEvents(V2_SESSION_ID).size)
             assertEquals(
-                4,
+                5,
                 database.openHelper.readableDatabase
                     .query("PRAGMA user_version")
                     .use { cursor ->
@@ -227,6 +233,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
+            ProximityLabDatabase.MIGRATION_4_5,
         ).build()
         try {
             val sessionStore = RoomSessionStore(reopened.samplingSessionDao())
@@ -253,6 +260,7 @@ class ProximityLabDatabaseMigrationTest {
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
+            ProximityLabDatabase.MIGRATION_4_5,
         ).build()
 
         try {
@@ -285,7 +293,7 @@ class ProximityLabDatabaseMigrationTest {
             assertEquals(true, configStore.selectConfig(created.configId))
             assertEquals(created.configId, configStore.loadSelectedConfigId())
             assertEquals(
-                4,
+                5,
                 database.openHelper.readableDatabase
                     .query("PRAGMA user_version")
                     .use { cursor ->
@@ -295,6 +303,91 @@ class ProximityLabDatabaseMigrationTest {
             )
         } finally {
             database.close()
+        }
+    }
+
+    @Test
+    fun version4SessionAndSnapshotSurviveMigrationAndMarkerTablesAreUsable() = runBlocking {
+        createVersion4DatabaseWithSnapshot()
+
+        val database = Room.databaseBuilder(
+            context,
+            ProximityLabDatabase::class.java,
+            databaseName,
+        ).addMigrations(
+            ProximityLabDatabase.MIGRATION_1_2,
+            ProximityLabDatabase.MIGRATION_2_3,
+            ProximityLabDatabase.MIGRATION_3_4,
+            ProximityLabDatabase.MIGRATION_4_5,
+        ).build()
+
+        try {
+            val sessionStore = RoomSessionStore(database.samplingSessionDao())
+            val session = requireNotNull(sessionStore.loadSession(V2_SESSION_ID))
+            // 旧 Session 保留，并得到默认未标记标签。
+            assertEquals(SamplingType.FIXED_POINT, session.samplingType)
+            assertEquals(STARTED_AT, session.startedAtEpochMillis)
+            assertEquals(SessionEvaluationLabel.UNMARKED, session.evaluationLabel)
+            assertEquals(3, sessionStore.loadTimeline(V2_SESSION_ID).size)
+            assertEquals(
+                listOf(-85, -84, -60),
+                sessionStore.loadTimeline(V2_SESSION_ID).map {
+                    (it.event as SessionTimelineEvent.Observation).rawRssiDbm
+                },
+            )
+            assertEquals("迁移前用户配置", sessionStore.loadConfigSnapshot(V2_SESSION_ID)?.name)
+
+            val marker = SessionReferenceMarker(
+                markerId = "migrated-marker",
+                sessionId = V2_SESSION_ID,
+                kind = ReferenceMarkerKind.EXPECTED_TRIGGER,
+                atEpochMillis = STARTED_AT + 1_500L,
+                createdAtEpochMillis = STARTED_AT + 1_500L,
+            )
+            assertEquals(marker, sessionStore.insertReferenceMarker(marker))
+            assertEquals(
+                SessionEvaluationLabel.EXPECTED_TRIGGER,
+                sessionStore.loadSession(V2_SESSION_ID)?.evaluationLabel,
+            )
+            assertEquals(
+                listOf("migrated-marker"),
+                sessionStore.loadReferenceMarkers(V2_SESSION_ID).map { it.markerId },
+            )
+            assertEquals(
+                5,
+                database.openHelper.readableDatabase
+                    .query("PRAGMA user_version")
+                    .use { cursor ->
+                        cursor.moveToFirst()
+                        cursor.getInt(0)
+                    },
+            )
+        } finally {
+            database.close()
+        }
+
+        // 关闭重开后，升级前已采记录、快照和升级后标记均仍可读。
+        val reopened = Room.databaseBuilder(
+            context,
+            ProximityLabDatabase::class.java,
+            databaseName,
+        ).addMigrations(
+            ProximityLabDatabase.MIGRATION_1_2,
+            ProximityLabDatabase.MIGRATION_2_3,
+            ProximityLabDatabase.MIGRATION_3_4,
+            ProximityLabDatabase.MIGRATION_4_5,
+        ).build()
+        try {
+            val sessionStore = RoomSessionStore(reopened.samplingSessionDao())
+            assertEquals(V2_SESSION_ID, sessionStore.loadSession(V2_SESSION_ID)?.id)
+            assertEquals(3, sessionStore.loadTimeline(V2_SESSION_ID).size)
+            assertEquals(1, sessionStore.loadReferenceMarkers(V2_SESSION_ID).size)
+            assertEquals(
+                SessionEvaluationLabel.EXPECTED_TRIGGER,
+                sessionStore.loadSession(V2_SESSION_ID)?.evaluationLabel,
+            )
+        } finally {
+            reopened.close()
         }
     }
 
@@ -536,6 +629,44 @@ class ProximityLabDatabaseMigrationTest {
                 ),
             )
             database.version = 3
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun createVersion4DatabaseWithSnapshot() {
+        createVersion3DatabaseWithSnapshot()
+        val database = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
+        try {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `algorithm_config` (
+                    `configId` TEXT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `algorithm` TEXT NOT NULL,
+                    `enterThresholdDbm` INTEGER NOT NULL,
+                    `exitThresholdDbm` INTEGER NOT NULL,
+                    `confirmationKind` TEXT NOT NULL,
+                    `confirmationValue` INTEGER NOT NULL,
+                    `sampleValidityMillis` INTEGER NOT NULL,
+                    `emaAlpha` REAL NOT NULL,
+                    `createdAtEpochMillis` INTEGER NOT NULL,
+                    `updatedAtEpochMillis` INTEGER NOT NULL,
+                    PRIMARY KEY(`configId`)
+                )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `algorithm_selection` (
+                    `slot` INTEGER NOT NULL,
+                    `configId` TEXT NOT NULL,
+                    `updatedAtEpochMillis` INTEGER NOT NULL,
+                    PRIMARY KEY(`slot`)
+                )
+                """.trimIndent(),
+            )
+            database.version = 4
         } finally {
             database.close()
         }

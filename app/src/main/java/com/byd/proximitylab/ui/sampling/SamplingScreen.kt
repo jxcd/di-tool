@@ -1,6 +1,7 @@
 package com.byd.proximitylab.ui.sampling
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,7 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -18,8 +21,12 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,15 +38,24 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.byd.proximitylab.ProximityLabApplication
 import com.byd.proximitylab.session.FixedSampleLocation
 import com.byd.proximitylab.session.PhonePlacement
+import com.byd.proximitylab.session.RssiStatistics
+import com.byd.proximitylab.session.ReferenceMarkerKind
 import com.byd.proximitylab.session.SamplingSession
+import com.byd.proximitylab.session.SamplingType
+import com.byd.proximitylab.session.SessionEvaluationLabel
 import com.byd.proximitylab.session.SessionLifecycleStatus
+import com.byd.proximitylab.session.SessionListFilter
+import com.byd.proximitylab.session.SessionMarkerEvaluation
 import com.byd.proximitylab.session.SessionSummary
 import com.byd.proximitylab.session.SessionTimelineEvent
 import com.byd.proximitylab.session.coverageEndEpochMillis
 import com.byd.proximitylab.session.durationMillis
+import com.byd.proximitylab.session.sessionOffsetMillis
 import com.byd.proximitylab.target.BoundTarget
 import com.byd.proximitylab.ui.AppViewModelProvider
+import com.byd.proximitylab.ui.chart.RssiChart
 import com.byd.proximitylab.ui.navigation.LabDestination
+import java.util.Locale
 
 @Composable
 fun SamplingScreen(
@@ -61,7 +77,8 @@ fun SamplingScreen(
             style = MaterialTheme.typography.headlineMedium,
         )
         Text(
-            text = "从定点条件开始一次采样。原始观测、扫描与身份变化写入本地 Session，停止后可重新打开查看。",
+            text = "记录定点或行走采样。原始观测、扫描与身份变化写入本地 Session；" +
+                "人工标记只用于评价，不修改原始观测。",
             style = MaterialTheme.typography.bodyMedium,
         )
 
@@ -73,11 +90,23 @@ fun SamplingScreen(
             )
         }
 
+        uiState.deleteCandidate?.let { candidate ->
+            DeleteSessionDialog(
+                candidate = candidate,
+                onConfirm = viewModel::confirmDeleteSession,
+                onDismiss = viewModel::dismissDeleteSession,
+            )
+        }
+
         val detail = uiState.detail
         if (detail != null) {
             SessionDetailCard(
                 detail = detail,
                 onBack = viewModel::closeDetail,
+                onRename = viewModel::renameSession,
+                onSelectLabel = viewModel::setEvaluationLabel,
+                onDeleteMarker = viewModel::deleteReferenceMarker,
+                onDeleteSession = viewModel::requestDeleteSession,
             )
             return@Column
         }
@@ -91,6 +120,8 @@ fun SamplingScreen(
                 session = activeSession,
                 observationCount = summary?.observationCount ?: 0,
                 droppedTargetEventCount = uiState.droppedTargetEventCount,
+                markerKinds = uiState.activeMarkerKinds,
+                onMarker = viewModel::addReferenceMarker,
                 onStop = viewModel::stopSampling,
             )
         } else {
@@ -98,6 +129,7 @@ fun SamplingScreen(
                 form = uiState.form,
                 canStart = uiState.binding != null,
                 onNameChange = viewModel::updateName,
+                onTypeSelected = viewModel::selectSamplingType,
                 onLocationSelected = viewModel::selectLocation,
                 onPlacementSelected = viewModel::selectPhonePlacement,
                 onDistanceChange = viewModel::updateEstimatedDistance,
@@ -108,17 +140,29 @@ fun SamplingScreen(
         HorizontalDivider()
 
         Text(
-            text = "Session 列表（${uiState.sessions.size}）",
+            text = "Session 列表（${uiState.filteredSessions.size}/${uiState.sessions.size}）",
             style = MaterialTheme.typography.titleLarge,
         )
-        if (uiState.sessions.isEmpty()) {
+        SessionFilterCard(
+            filter = uiState.filter,
+            deviceOptions = uiState.deviceOptions,
+            onTypeSelected = viewModel::selectSamplingTypeFilter,
+            onLocationSelected = viewModel::selectLocationFilter,
+            onDeviceSelected = viewModel::selectDeviceFilter,
+            onClear = viewModel::clearFilters,
+        )
+        if (uiState.filteredSessions.isEmpty()) {
             Text(
                 modifier = Modifier.testTag("sampling_sessions_empty"),
-                text = "尚无已保存的 Session。",
+                text = if (uiState.sessions.isEmpty()) {
+                    "尚无已保存的 Session。"
+                } else {
+                    "没有符合筛选条件的 Session。"
+                },
                 style = MaterialTheme.typography.bodyMedium,
             )
         } else {
-            uiState.sessions.forEach { summary ->
+            uiState.filteredSessions.forEach { summary ->
                 SessionRow(
                     summary = summary,
                     onClick = { viewModel.openSession(summary.session.id) },
@@ -165,6 +209,8 @@ private fun ActiveSessionCard(
     session: SamplingSession,
     observationCount: Int,
     droppedTargetEventCount: Int,
+    markerKinds: List<ReferenceMarkerKind>,
+    onMarker: (ReferenceMarkerKind) -> Unit,
     onStop: () -> Unit,
 ) {
     OutlinedCard(modifier = Modifier.fillMaxWidth().testTag("sampling_active")) {
@@ -173,7 +219,7 @@ private fun ActiveSessionCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = "正在采集：${session.name}",
+                text = "正在采集：${session.name}（${session.samplingType.label}）",
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
@@ -196,6 +242,31 @@ private fun ActiveSessionCard(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            if (markerKinds.isNotEmpty()) {
+                Text(
+                    text = if (session.samplingType == SamplingType.SIMULATION) {
+                        "人工标记（模拟测试）"
+                    } else {
+                        "行走参考标记"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    markerKinds.forEach { kind ->
+                        OutlinedButton(
+                            modifier = Modifier.testTag("sampling_marker_${kind.name}"),
+                            onClick = { onMarker(kind) },
+                        ) {
+                            Text(kind.label)
+                        }
+                    }
+                }
+            }
             Button(
                 modifier = Modifier.testTag("sampling_stop"),
                 onClick = onStop,
@@ -211,6 +282,7 @@ private fun SamplingFormCard(
     form: SamplingFormState,
     canStart: Boolean,
     onNameChange: (String) -> Unit,
+    onTypeSelected: (SamplingType) -> Unit,
     onLocationSelected: (FixedSampleLocation) -> Unit,
     onPlacementSelected: (PhonePlacement) -> Unit,
     onDistanceChange: (String) -> Unit,
@@ -222,7 +294,7 @@ private fun SamplingFormCard(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                text = "定点采样条件",
+                text = "采样条件",
                 style = MaterialTheme.typography.titleMedium,
             )
             OutlinedTextField(
@@ -232,6 +304,19 @@ private fun SamplingFormCard(
                 label = { Text("Session 名称") },
                 singleLine = true,
             )
+
+            Text(
+                text = "采样类型",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            listOf(SamplingType.FIXED_POINT, SamplingType.WALKING).forEach { type ->
+                ChoiceRow(
+                    label = type.label,
+                    selected = form.samplingType == type,
+                    testTag = "sampling_type_${type.name}",
+                    onClick = { onTypeSelected(type) },
+                )
+            }
 
             Text(
                 text = "位置",
@@ -303,6 +388,97 @@ private fun ChoiceRow(
 }
 
 @Composable
+private fun SessionFilterCard(
+    filter: SessionListFilter,
+    deviceOptions: List<SessionDeviceOption>,
+    onTypeSelected: (SamplingType?) -> Unit,
+    onLocationSelected: (FixedSampleLocation?) -> Unit,
+    onDeviceSelected: (String?) -> Unit,
+    onClear: () -> Unit,
+) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth().testTag("sampling_filters")) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(text = "筛选", style = MaterialTheme.typography.titleMedium)
+            FilterChipRow(title = "类型") {
+                FilterChip(
+                    modifier = Modifier.testTag("sampling_filter_type_ALL"),
+                    selected = filter.samplingType == null,
+                    onClick = { onTypeSelected(null) },
+                    label = { Text("全部") },
+                )
+                SamplingType.entries.forEach { type ->
+                    FilterChip(
+                        modifier = Modifier.testTag("sampling_filter_type_${type.name}"),
+                        selected = filter.samplingType == type,
+                        onClick = { onTypeSelected(type) },
+                        label = { Text(type.label) },
+                    )
+                }
+            }
+            FilterChipRow(title = "位置") {
+                FilterChip(
+                    modifier = Modifier.testTag("sampling_filter_location_ALL"),
+                    selected = filter.location == null,
+                    onClick = { onLocationSelected(null) },
+                    label = { Text("全部") },
+                )
+                FixedSampleLocation.entries.forEach { location ->
+                    FilterChip(
+                        modifier = Modifier.testTag("sampling_filter_location_${location.name}"),
+                        selected = filter.location == location,
+                        onClick = { onLocationSelected(location) },
+                        label = { Text(location.label) },
+                    )
+                }
+            }
+            FilterChipRow(title = "设备") {
+                FilterChip(
+                    modifier = Modifier.testTag("sampling_filter_device_ALL"),
+                    selected = filter.targetId == null,
+                    onClick = { onDeviceSelected(null) },
+                    label = { Text("全部") },
+                )
+                deviceOptions.forEach { option ->
+                    FilterChip(
+                        modifier = Modifier.testTag("sampling_filter_device_${option.targetId}"),
+                        selected = filter.targetId == option.targetId,
+                        onClick = { onDeviceSelected(option.targetId) },
+                        label = { Text(option.label) },
+                    )
+                }
+            }
+            if (filter.isActive) {
+                TextButton(
+                    modifier = Modifier.testTag("sampling_filter_clear"),
+                    onClick = onClear,
+                ) {
+                    Text("清除筛选")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterChipRow(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Text(text = title, style = MaterialTheme.typography.titleSmall)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        content()
+    }
+}
+
+@Composable
 private fun SessionRow(
     summary: SessionSummary,
     onClick: () -> Unit,
@@ -327,8 +503,14 @@ private fun SessionRow(
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "${session.location.label} · ${session.phonePlacement.label} · " +
-                    "时长 ${formatSessionDuration(session.durationMillis)} · 原始样本 ${summary.observationCount}",
+                text = "${session.samplingType.label} · ${session.location.label} · " +
+                    "${session.phonePlacement.label} · 时长 ${formatSessionDuration(session.durationMillis)} · " +
+                    "原始样本 ${summary.observationCount}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                modifier = Modifier.testTag("sampling_session_label_${session.id}"),
+                text = "人工标签：${session.evaluationLabel.label}",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
@@ -343,6 +525,10 @@ private fun SessionRow(
 private fun SessionDetailCard(
     detail: SessionDetailState,
     onBack: () -> Unit,
+    onRename: (String, String) -> Unit,
+    onSelectLabel: (String, SessionEvaluationLabel) -> Unit,
+    onDeleteMarker: (String) -> Unit,
+    onDeleteSession: (String) -> Unit,
 ) {
     val session = detail.session
     OutlinedCard(
@@ -407,6 +593,92 @@ private fun SessionDetailCard(
                 text = "原始样本：${detail.observationCount}",
                 style = MaterialTheme.typography.bodyMedium,
             )
+            detail.configSnapshot?.let { snapshot ->
+                Text(
+                    modifier = Modifier.testTag("sampling_detail_config"),
+                    text = "配置快照：${snapshot.name} · ${snapshot.config.algorithm.name} · " +
+                        "进入 ${snapshot.config.enterThresholdDbm} / 离开 ${snapshot.config.exitThresholdDbm} dBm · " +
+                        "算法版本 ${snapshot.algorithmVersion} · 触发规则 ${snapshot.triggerRuleVersion}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            HorizontalDivider()
+
+            Text(text = "采样曲线", style = MaterialTheme.typography.titleSmall)
+            RssiChart(
+                data = detail.chart,
+                testTagPrefix = "sampling_detail_chart",
+            )
+            detail.statistics?.let { statistics ->
+                Text(
+                    modifier = Modifier.testTag("sampling_detail_stats"),
+                    text = statisticsText(statistics),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            HorizontalDivider()
+
+            Text(text = "人工参考标记", style = MaterialTheme.typography.titleSmall)
+            Text(
+                modifier = Modifier.testTag("sampling_detail_label"),
+                text = "整次试验标签：${session.evaluationLabel.label}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                SessionEvaluationLabel.entries.forEach { label ->
+                    FilterChip(
+                        modifier = Modifier.testTag("sampling_label_${label.name}"),
+                        selected = session.evaluationLabel == label,
+                        onClick = { onSelectLabel(session.id, label) },
+                        label = { Text(label.label) },
+                    )
+                }
+            }
+            Text(
+                modifier = Modifier.testTag("sampling_detail_evaluation"),
+                text = evaluationText(detail.evaluation, session),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (detail.markers.isEmpty()) {
+                Text(
+                    modifier = Modifier.testTag("sampling_detail_markers_empty"),
+                    text = "尚无人工作业标记。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                detail.markers.forEach { marker ->
+                    val inCoverage = detail.evaluation.markersInCoverage.any { candidate ->
+                        candidate.markerId == marker.markerId
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("sampling_marker_row_${marker.markerId}"),
+                            text = "${marker.kind.label} · ${formatSessionDateTime(marker.atEpochMillis)} · " +
+                                "会话 +${formatSessionDuration(marker.sessionOffsetMillis(session))}" +
+                                if (inCoverage) "" else "（覆盖范围外，不参与评分）",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(
+                            modifier = Modifier.testTag("sampling_delete_marker_${marker.markerId}"),
+                            onClick = { onDeleteMarker(marker.markerId) },
+                        ) {
+                            Text("删除")
+                        }
+                    }
+                }
+            }
 
             HorizontalDivider()
 
@@ -451,8 +723,74 @@ private fun SessionDetailCard(
                     )
                 }
             }
+
+            HorizontalDivider()
+
+            Text(text = "Session 管理", style = MaterialTheme.typography.titleSmall)
+            var renameDraft by remember(session.id, session.name) { mutableStateOf(session.name) }
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth().testTag("sampling_rename_field"),
+                value = renameDraft,
+                onValueChange = { value -> renameDraft = value },
+                label = { Text("Session 名称") },
+                singleLine = true,
+            )
+            Button(
+                modifier = Modifier.testTag("sampling_rename_save"),
+                enabled = renameDraft.isNotBlank() && renameDraft.trim() != session.name,
+                onClick = { onRename(session.id, renameDraft) },
+            ) {
+                Text("保存名称")
+            }
+            OutlinedButton(
+                modifier = Modifier.testTag("sampling_delete_session"),
+                enabled = session.status != SessionLifecycleStatus.RECORDING,
+                onClick = { onDeleteSession(session.id) },
+            ) {
+                Text("删除此 Session")
+            }
+            Text(
+                modifier = Modifier.testTag("sampling_detail_replay_hint"),
+                text = "Session ID：${session.id}（后续回放入口使用同一 ID）",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
+}
+
+@Composable
+private fun DeleteSessionDialog(
+    candidate: SessionSummary,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("sampling_delete_dialog"),
+        onDismissRequest = onDismiss,
+        title = { Text("删除 Session") },
+        text = {
+            Text(
+                "确定删除「${candidate.session.name}」？该 Session 的原始观测、人工标记和配置快照" +
+                    "将一并删除，且不可恢复。",
+            )
+        },
+        confirmButton = {
+            TextButton(
+                modifier = Modifier.testTag("sampling_delete_confirm"),
+                onClick = onConfirm,
+            ) {
+                Text("删除")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                modifier = Modifier.testTag("sampling_delete_cancel"),
+                onClick = onDismiss,
+            ) {
+                Text("取消")
+            }
+        },
+    )
 }
 
 private fun detailStatus(session: SamplingSession): String = when (session.status) {
@@ -465,6 +803,37 @@ private fun detailStatus(session: SamplingSession): String = when (session.statu
             "中断时刻不计入结束时间或评分覆盖）"
 }
 
+private fun statisticsText(statistics: RssiStatistics): String =
+    "定点统计：样本数 ${statistics.sampleCount} · " +
+        "均值 ${formatDbm(statistics.meanDbm)} · " +
+        "中位数 ${formatDbm(statistics.medianDbm)} · " +
+        "标准差 ${formatDbm(statistics.standardDeviationDbm)}"
+
+private fun evaluationText(
+    evaluation: SessionMarkerEvaluation,
+    session: SamplingSession,
+): String = when {
+    evaluation.isNegativeSample ->
+        "评价：无需触发（负样本），用于统计误触发。原始观测仍可查看。"
+
+    evaluation.expectedTriggerConflict ->
+        "评价：参考标记冲突（覆盖范围内 ${evaluation.expectedTriggerMarkersInCoverage.size} 个期望触发点）。" +
+            "请删除多余标记，或保留为诊断；冲突记录不参与评分。"
+
+    evaluation.isPositiveSample -> {
+        val triggerAt = requireNotNull(evaluation.expectedTriggerAtEpochMillis)
+        val offset = (triggerAt - session.startedAtEpochMillis).coerceAtLeast(0L)
+        "评价：期望触发，会话 +${formatSessionDuration(offset)}（唯一期望触发点）。"
+    }
+
+    evaluation.missingExpectedTrigger ->
+        "评价：已标记期望触发，但覆盖范围内没有期望触发点；不会作为正样本参与评分。"
+
+    else -> "评价：未标记，仅显示观测结果；也可把整次试验标为无需触发或记录期望触发点。"
+}
+
+private fun formatDbm(value: Double): String = String.format(Locale.ROOT, "%.1f dBm", value)
+
 private const val MAX_DETAIL_OBSERVATIONS = 20
 
 @Composable
@@ -476,6 +845,8 @@ private fun rememberSamplingViewModel(): SamplingViewModel {
             recorder = application.container.sessionRecorder,
             store = application.container.sessionStore,
             observationSource = application.container.targetMonitor,
+            markerRecorder = application.container.sessionMarkerRecorder,
+            simulationStore = application.container.simulationRunStore,
         ),
     )
 }

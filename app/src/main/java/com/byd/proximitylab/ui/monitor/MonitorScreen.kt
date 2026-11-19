@@ -61,6 +61,7 @@ fun MonitorScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val chartState by viewModel.chartState.collectAsStateWithLifecycle()
     val history by viewModel.eventHistory.collectAsStateWithLifecycle()
+    val markerMessage by viewModel.markerMessage.collectAsStateWithLifecycle()
     val displayed = uiState.displayDecision
     val status = MonitorStatusFormatter.describe(uiState)
 
@@ -211,6 +212,20 @@ fun MonitorScreen(
 
         uiState.test?.let { test ->
             TestCard(test = test)
+            OutlinedButton(
+                modifier = Modifier.testTag("monitor_mark_expected"),
+                enabled = uiState.simulationRunning,
+                onClick = viewModel::markExpectedTrigger,
+            ) {
+                Text("记录到达期望位置")
+            }
+            markerMessage?.let { message ->
+                Text(
+                    modifier = Modifier.testTag("monitor_marker_message"),
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
 
         ChartCard(
@@ -564,6 +579,7 @@ private fun rememberMonitorViewModel(): MonitorViewModel {
             configStore = application.container.algorithmConfigStore,
             sessionStore = application.container.sessionStore,
             simulationStore = application.container.simulationRunStore,
+            markerRecorder = application.container.sessionMarkerRecorder,
         ),
     )
 }

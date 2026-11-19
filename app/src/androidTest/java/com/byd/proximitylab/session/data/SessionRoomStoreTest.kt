@@ -7,9 +7,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.byd.proximitylab.data.ProximityLabDatabase
 import com.byd.proximitylab.session.FixedSampleLocation
 import com.byd.proximitylab.session.PhonePlacement
+import com.byd.proximitylab.session.ReferenceMarkerKind
 import com.byd.proximitylab.session.SamplingSession
 import com.byd.proximitylab.session.SamplingType
+import com.byd.proximitylab.session.SessionEvaluationLabel
 import com.byd.proximitylab.session.SessionLifecycleStatus
+import com.byd.proximitylab.session.SessionReferenceMarker
 import com.byd.proximitylab.session.SessionTimelineEvent
 import com.byd.proximitylab.session.coverageEndEpochMillis
 import com.byd.proximitylab.session.durationMillis
@@ -17,7 +20,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -249,6 +255,63 @@ class SessionRoomStoreTest {
         assertEquals(1_500L, store.loadSession("session-1")?.lastRecordedAtEpochMillis)
     }
 
+    @Test
+    fun referenceMarkersPersistPromoteLabelAndCascadeOnlyOnSelectedSession() = runBlocking {
+        var store = RoomSessionStore(openDatabase().samplingSessionDao())
+        store.createSession(session(startedAt = 1_000L))
+        store.createSession(session(startedAt = 2_000L).copy(id = "session-2"))
+        store.insertReferenceMarker(marker("m-approach", "session-1", ReferenceMarkerKind.APPROACH_START, 1_500L))
+        store.insertReferenceMarker(marker("m-expected", "session-1", ReferenceMarkerKind.EXPECTED_TRIGGER, 2_000L))
+        store.insertReferenceMarker(marker("m-other", "session-2", ReferenceMarkerKind.EXPECTED_TRIGGER, 2_500L))
+
+        assertEquals(SessionEvaluationLabel.EXPECTED_TRIGGER, store.loadSession("session-1")?.evaluationLabel)
+        assertEquals(SessionEvaluationLabel.EXPECTED_TRIGGER, store.loadSession("session-2")?.evaluationLabel)
+        assertEquals(
+            listOf("m-approach", "m-expected"),
+            store.loadReferenceMarkers("session-1").map { it.markerId },
+        )
+
+        database?.close()
+        store = RoomSessionStore(openDatabase().samplingSessionDao())
+
+        assertEquals(
+            listOf("m-approach", "m-expected"),
+            store.observeReferenceMarkers("session-1").first().map { it.markerId },
+        )
+        assertEquals(1_500L, store.loadReferenceMarkers("session-1").first().atEpochMillis)
+
+        assertTrue(store.deleteReferenceMarker("m-approach"))
+        assertFalse(store.deleteReferenceMarker("m-approach"))
+        assertEquals(listOf("m-expected"), store.loadReferenceMarkers("session-1").map { it.markerId })
+
+        // 删除一个 Session 只级联清理它自己的标记，另一条 Session 的标记仍可读。
+        store.deleteSession("session-1")
+        assertTrue(store.loadReferenceMarkers("session-1").isEmpty())
+        assertEquals(listOf("m-other"), store.loadReferenceMarkers("session-2").map { it.markerId })
+        assertNotNull(store.loadSession("session-2"))
+    }
+
+    @Test
+    fun renameAndEvaluationLabelDoNotChangeTimeline() = runBlocking {
+        val store = RoomSessionStore(openDatabase().samplingSessionDao())
+        store.createSession(session(startedAt = 1_000L))
+        store.appendTimeline("session-1", observation("edit-1", rawRssiDbm = -70, processedAt = 1_500L))
+        store.appendTimeline("session-1", observation("edit-2", rawRssiDbm = -60, processedAt = 2_500L))
+        val before = store.loadTimeline("session-1")
+
+        val renamed = requireNotNull(store.renameSession("session-1", "  改名后的车头定点  "))
+        assertEquals("改名后的车头定点", renamed.name)
+        val labelled = requireNotNull(
+            store.updateEvaluationLabel("session-1", SessionEvaluationLabel.NO_TRIGGER),
+        )
+        assertEquals(SessionEvaluationLabel.NO_TRIGGER, labelled.evaluationLabel)
+        assertEquals(before, store.loadTimeline("session-1"))
+
+        assertNull(store.renameSession("session-1", "   "))
+        assertEquals("改名后的车头定点", store.loadSession("session-1")?.name)
+        assertEquals(before, store.loadTimeline("session-1"))
+    }
+
     private fun openDatabase(): ProximityLabDatabase {
         val opened = Room.databaseBuilder(
             context,
@@ -258,6 +321,7 @@ class SessionRoomStoreTest {
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
+            ProximityLabDatabase.MIGRATION_4_5,
         ).build()
         database?.close()
         database = opened
@@ -296,6 +360,19 @@ class SessionRoomStoreTest {
         address = "AA:BB:CC:DD:EE:01",
         payloadFingerprint = "fingerprint-$observationId",
         processedAtEpochMillis = processedAt,
+    )
+
+    private fun marker(
+        markerId: String,
+        sessionId: String,
+        kind: ReferenceMarkerKind,
+        atEpochMillis: Long,
+    ): SessionReferenceMarker = SessionReferenceMarker(
+        markerId = markerId,
+        sessionId = sessionId,
+        kind = kind,
+        atEpochMillis = atEpochMillis,
+        createdAtEpochMillis = atEpochMillis,
     )
 
     private fun SessionTimelineEvent.toKind(): String = when (this) {

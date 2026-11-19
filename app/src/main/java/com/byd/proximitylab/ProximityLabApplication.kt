@@ -8,6 +8,7 @@ import com.byd.proximitylab.algorithmconfig.data.RoomAlgorithmConfigStore
 import com.byd.proximitylab.ble.AndroidBleScanSource
 import com.byd.proximitylab.ble.BleScanSource
 import com.byd.proximitylab.data.ProximityLabDatabase
+import com.byd.proximitylab.session.SessionMarkerRecorder
 import com.byd.proximitylab.session.SessionRecorder
 import com.byd.proximitylab.session.SessionStore
 import com.byd.proximitylab.session.data.RoomSessionStore
@@ -52,6 +53,7 @@ class AppContainer(
             ProximityLabDatabase.MIGRATION_1_2,
             ProximityLabDatabase.MIGRATION_2_3,
             ProximityLabDatabase.MIGRATION_3_4,
+            ProximityLabDatabase.MIGRATION_4_5,
         )
         .build()
 
@@ -89,6 +91,11 @@ class AppContainer(
         observationSource = targetMonitor,
         scope = scope,
     )
+
+    /**
+     * 08 的实时人工标记入口，采样页与模拟测试页共用同一 Session 时基。
+     */
+    val sessionMarkerRecorder: SessionMarkerRecorder = SessionMarkerRecorder(store = sessionStore)
 
     /**
      * 05 实时监控与前台模拟测试入口。放在应用级作用域，界面旋转、换页或重新订阅不会结束运行中的测试。

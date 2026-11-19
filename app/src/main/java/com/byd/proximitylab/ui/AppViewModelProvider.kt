@@ -5,6 +5,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.byd.proximitylab.algorithmconfig.AlgorithmConfigStore
 import com.byd.proximitylab.live.LiveMonitorController
+import com.byd.proximitylab.session.SessionMarkerRecorder
 import com.byd.proximitylab.session.SessionRecorder
 import com.byd.proximitylab.session.SessionStore
 import com.byd.proximitylab.simulation.SimulationRunStore
@@ -30,9 +31,18 @@ object AppViewModelProvider {
         configStore: AlgorithmConfigStore? = null,
         sessionStore: SessionStore? = null,
         simulationStore: SimulationRunStore? = null,
+        markerRecorder: SessionMarkerRecorder? = null,
     ): ViewModelProvider.Factory =
         viewModelFactory {
-            initializer { MonitorViewModel(controller, configStore, sessionStore, simulationStore) }
+            initializer {
+                MonitorViewModel(
+                    controller,
+                    configStore,
+                    sessionStore,
+                    simulationStore,
+                    markerRecorder,
+                )
+            }
         }
 
     fun deviceFactory(monitor: TargetMonitor): ViewModelProvider.Factory = viewModelFactory {
@@ -43,7 +53,17 @@ object AppViewModelProvider {
         recorder: SessionRecorder,
         store: SessionStore,
         observationSource: TargetObservationSource,
+        markerRecorder: SessionMarkerRecorder,
+        simulationStore: SimulationRunStore? = null,
     ): ViewModelProvider.Factory = viewModelFactory {
-        initializer { SamplingViewModel(recorder, store, observationSource) }
+        initializer {
+            SamplingViewModel(
+                recorder = recorder,
+                store = store,
+                observationSource = observationSource,
+                markerRecorder = markerRecorder,
+                simulationStore = simulationStore,
+            )
+        }
     }
 }

@@ -10,6 +10,7 @@ import com.byd.proximitylab.algorithmconfig.data.AlgorithmSelectionEntity
 import com.byd.proximitylab.session.data.SamplingSessionDao
 import com.byd.proximitylab.session.data.SamplingSessionEntity
 import com.byd.proximitylab.session.data.SessionConfigSnapshotEntity
+import com.byd.proximitylab.session.data.SessionReferenceMarkerEntity
 import com.byd.proximitylab.session.data.SessionTimelineEntity
 import com.byd.proximitylab.simulation.data.SessionRunEventEntity
 import com.byd.proximitylab.simulation.data.SessionRunStateEntity
@@ -21,9 +22,9 @@ import com.byd.proximitylab.target.data.TargetBindingDao
  * 全 App 唯一的 Room 数据库。
  *
  * 02 在这里落地绑定目标表；04 提升到版本 2 并增量添加采样 Session 与时间线表；05 提升到版本 3，
- * 增加模拟测试配置快照、事件和状态结果；06 提升到版本 4，增加用户算法配置和当前选择。
- * 迁移保留已有绑定、已采数据和已保存的配置快照，后续切片不要新建第二个 Room 数据库，
- * 也不能用 destructive fallback 丢弃历史记录。
+ * 增加模拟测试配置快照、事件和状态结果；06 提升到版本 4，增加用户算法配置和当前选择；08 提升到
+ * 版本 5，增加整次试验人工标签和人工参考标记表。迁移保留已有绑定、已采数据和已保存的配置快照，
+ * 后续切片不要新建第二个 Room 数据库，也不能用 destructive fallback 丢弃历史记录。
  */
 @Database(
     entities = [
@@ -31,12 +32,13 @@ import com.byd.proximitylab.target.data.TargetBindingDao
         SamplingSessionEntity::class,
         SessionTimelineEntity::class,
         SessionConfigSnapshotEntity::class,
+        SessionReferenceMarkerEntity::class,
         SessionRunEventEntity::class,
         SessionRunStateEntity::class,
         AlgorithmConfigEntity::class,
         AlgorithmSelectionEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class ProximityLabDatabase : RoomDatabase() {
@@ -246,6 +248,45 @@ abstract class ProximityLabDatabase : RoomDatabase() {
                         PRIMARY KEY(`slot`)
                     )
                     """.trimIndent(),
+                )
+            }
+        }
+
+        /**
+         * 06 → 08：保留所有已采 Session、时间线、配置快照和算法配置，新增整次试验人工标签与
+         * 人工参考标记表。
+         *
+         * 旧 Session 默认标签为 `UNMARKED`；标记独立成表，删除/编辑标签不会改动原始时间线。
+         */
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `sampling_session` ADD COLUMN `evaluationLabel` TEXT NOT NULL " +
+                        "DEFAULT 'UNMARKED'",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `session_reference_marker` (
+                        `markerId` TEXT NOT NULL,
+                        `sessionId` TEXT NOT NULL,
+                        `kind` TEXT NOT NULL,
+                        `atEpochMillis` INTEGER NOT NULL,
+                        `note` TEXT,
+                        `createdAtEpochMillis` INTEGER NOT NULL,
+                        PRIMARY KEY(`markerId`),
+                        FOREIGN KEY(`sessionId`) REFERENCES `sampling_session`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_session_reference_marker_sessionId` " +
+                        "ON `session_reference_marker` (`sessionId`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS " +
+                        "`index_session_reference_marker_sessionId_atEpochMillis` " +
+                        "ON `session_reference_marker` (`sessionId`, `atEpochMillis`)",
                 )
             }
         }

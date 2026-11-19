@@ -19,6 +19,7 @@ class InMemorySessionStore : SessionStore {
     private val sessions = MutableStateFlow<Map<String, SamplingSession>>(emptyMap())
     private val timelines = MutableStateFlow<Map<String, List<SessionTimelineItem>>>(emptyMap())
     private val snapshots = MutableStateFlow<Map<String, SessionConfigSnapshot>>(emptyMap())
+    private val markers = MutableStateFlow<Map<String, List<SessionReferenceMarker>>>(emptyMap())
     private var nextSequence: Long = 1L
 
     override fun observeSessions(): Flow<List<SessionSummary>> = sessions.map { stored ->
@@ -141,6 +142,73 @@ class InMemorySessionStore : SessionStore {
         sessions.update { it - sessionId }
         timelines.update { it - sessionId }
         snapshots.update { it - sessionId }
+        markers.update { it - sessionId }
+    }
+
+    override suspend fun renameSession(sessionId: String, name: String): SamplingSession? =
+        mutex.withLock {
+            val trimmed = name.trim()
+            if (trimmed.isEmpty()) {
+                return@withLock null
+            }
+            val existing = sessions.value[sessionId] ?: return@withLock null
+            val updated = existing.copy(name = trimmed)
+            sessions.update { it + (sessionId to updated) }
+            updated
+        }
+
+    override suspend fun updateEvaluationLabel(
+        sessionId: String,
+        label: SessionEvaluationLabel,
+    ): SamplingSession? = mutex.withLock {
+        val existing = sessions.value[sessionId] ?: return@withLock null
+        val updated = existing.copy(evaluationLabel = label)
+        sessions.update { it + (sessionId to updated) }
+        updated
+    }
+
+    override fun observeReferenceMarkers(sessionId: String): Flow<List<SessionReferenceMarker>> =
+        markers.map { stored -> orderedMarkers(stored[sessionId].orEmpty()) }
+
+    override suspend fun loadReferenceMarkers(sessionId: String): List<SessionReferenceMarker> =
+        mutex.withLock { orderedMarkers(markers.value[sessionId].orEmpty()) }
+
+    override suspend fun insertReferenceMarker(
+        marker: SessionReferenceMarker,
+    ): SessionReferenceMarker? = mutex.withLock {
+        val existing = sessions.value[marker.sessionId] ?: return@withLock null
+        markers.update { stored ->
+            stored + (marker.sessionId to (stored[marker.sessionId].orEmpty() + marker))
+        }
+        if (marker.kind == ReferenceMarkerKind.EXPECTED_TRIGGER &&
+            existing.evaluationLabel == SessionEvaluationLabel.UNMARKED
+        ) {
+            sessions.update { stored ->
+                stored + (
+                    marker.sessionId to existing.copy(
+                        evaluationLabel = SessionEvaluationLabel.EXPECTED_TRIGGER,
+                    )
+                    )
+            }
+        }
+        marker
+    }
+
+    override suspend fun deleteReferenceMarker(markerId: String): Boolean = mutex.withLock {
+        var removed = false
+        markers.update { stored ->
+            stored.mapValues { (_, sessionMarkers) ->
+                sessionMarkers.filterNot { marker ->
+                    if (marker.markerId == markerId) {
+                        removed = true
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+        }
+        removed
     }
 
     override suspend fun markRecordingSessionsInterrupted(
@@ -164,4 +232,7 @@ class InMemorySessionStore : SessionStore {
         timelines.value[sessionId].orEmpty().count { item ->
             item.event is SessionTimelineEvent.Observation
         }
+
+    private fun orderedMarkers(markers: List<SessionReferenceMarker>): List<SessionReferenceMarker> =
+        markers.sortedWith(compareBy({ marker -> marker.atEpochMillis }, { marker -> marker.markerId }))
 }

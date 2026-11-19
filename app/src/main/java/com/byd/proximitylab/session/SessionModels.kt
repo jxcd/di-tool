@@ -71,6 +71,10 @@ data class SamplingSession(
     val endedAtEpochMillis: Long?,
     val lastRecordedAtEpochMillis: Long,
     val interruptedDetectedAtEpochMillis: Long?,
+    /**
+     * 整次试验的人工标签。只影响评价，不修改原始时间线；08 起可编辑。
+     */
+    val evaluationLabel: SessionEvaluationLabel = SessionEvaluationLabel.UNMARKED,
 ) {
     init {
         require(id.isNotBlank()) { "Session ID 不能为空" }
